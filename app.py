@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from typing import Iterable
 
 import pandas as pd
@@ -13,6 +14,13 @@ STEAM_HERO_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/
 ROLE_OPTIONS = ["Hepsi", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
+REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    )
+}
 
 
 def matches_role_filter(roles: list[str], selected_role: str) -> bool:
@@ -52,6 +60,11 @@ def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> 
     if image_path.startswith("/apps/dota2/images/dota_react/heroes/"):
         return f"{STEAM_CDN_BASE_URL}{image_path}"
     return f"{STEAM_HERO_IMAGE_BASE_URL}/{image_path.rsplit('/', 1)[-1].replace('.full.png', '.png')}"
+
+
+def get_dotabuff_hero_slug(hero_name: str) -> str:
+    """Convert OpenDota internal hero names into Dotabuff hero slugs."""
+    return hero_name.removeprefix("npc_dota_hero_").replace("_", "-")
 
 
 def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFrame) -> None:
@@ -113,6 +126,7 @@ def fetch_counter_rows(selected_enemy_ids: tuple[int, ...], min_games_threshold:
         f"{API_BASE_URL}/explorer",
         params={"sql": sql},
         timeout=REQUEST_TIMEOUT,
+        headers=REQUEST_HEADERS,
     )
     response.raise_for_status()
     payload = response.json()
@@ -125,7 +139,11 @@ def fetch_counter_rows(selected_enemy_ids: tuple[int, ...], min_games_threshold:
 @st.cache_data(ttl=60 * 30, show_spinner=False)
 def fetch_hero_matchups(hero_id: int) -> list[dict]:
     """Fetch historical hero matchup data for a single enemy hero."""
-    response = requests.get(f"{API_BASE_URL}/heroes/{hero_id}/matchups", timeout=REQUEST_TIMEOUT)
+    response = requests.get(
+        f"{API_BASE_URL}/heroes/{hero_id}/matchups",
+        timeout=REQUEST_TIMEOUT,
+        headers=REQUEST_HEADERS,
+    )
     response.raise_for_status()
     rows = response.json()
     if not isinstance(rows, list):
@@ -261,11 +279,88 @@ def build_fallback_matchup_dataframe(
     return fallback_df.loc[:, ["hero_id", "games_played", "wins", "win_rate", "avg_enemy_overlap"]]
 
 
+@st.cache_data(ttl=60 * 60 * 12, show_spinner=False)
+def fetch_dotabuff_worst_versus(hero_slug: str) -> list[dict]:
+    """
+    Fetch Dotabuff 'Worst Versus This Week' rows for a hero.
+
+    This is an unofficial HTML parse, so failures are tolerated by callers.
+    """
+    response = requests.get(
+        f"https://www.dotabuff.com/heroes/{hero_slug}",
+        timeout=REQUEST_TIMEOUT,
+        headers=REQUEST_HEADERS,
+    )
+    response.raise_for_status()
+
+    tables = pd.read_html(StringIO(response.text))
+    target_table = None
+    for table in tables:
+        normalized_columns = [str(column).strip() for column in table.columns]
+        if normalized_columns == ["Hero", "Disadvantage", "Win Rate", "Matches"]:
+            target_table = table
+
+    if target_table is None:
+        return []
+
+    normalized_df = target_table.copy()
+    normalized_df.columns = ["Hero", "Disadvantage", "Win Rate", "Matches"]
+    normalized_df["Hero"] = normalized_df["Hero"].astype(str).str.strip()
+    normalized_df["Disadvantage"] = (
+        normalized_df["Disadvantage"].astype(str).str.replace("%", "", regex=False)
+    )
+    normalized_df["Win Rate"] = normalized_df["Win Rate"].astype(str).str.replace("%", "", regex=False)
+    normalized_df["Matches"] = normalized_df["Matches"].astype(str).str.replace(",", "", regex=False)
+    return normalized_df.to_dict("records")
+
+
+def build_dotabuff_signal_dataframe(
+    selected_enemy_names: Iterable[str],
+    hero_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Aggregate Dotabuff worst-versus data across selected enemy heroes."""
+    selected_df = hero_df[hero_df["localized_name"].isin(selected_enemy_names)].copy()
+    if selected_df.empty:
+        return pd.DataFrame()
+
+    signal_rows: list[dict] = []
+    for _, hero_row in selected_df.iterrows():
+        hero_slug = get_dotabuff_hero_slug(hero_row["name"])
+        for row in fetch_dotabuff_worst_versus(hero_slug):
+            signal_rows.append(
+                {
+                    "localized_name": row["Hero"],
+                    "dotabuff_disadvantage": pd.to_numeric(row["Disadvantage"], errors="coerce"),
+                    "dotabuff_matches": pd.to_numeric(row["Matches"], errors="coerce"),
+                    "dotabuff_enemy_hits": 1,
+                }
+            )
+
+    if not signal_rows:
+        return pd.DataFrame()
+
+    signal_df = pd.DataFrame(signal_rows).dropna(subset=["localized_name"])
+    if signal_df.empty:
+        return signal_df
+
+    signal_df = (
+        signal_df.groupby("localized_name", as_index=False)
+        .agg(
+            dotabuff_disadvantage=("dotabuff_disadvantage", "mean"),
+            dotabuff_matches=("dotabuff_matches", "sum"),
+            dotabuff_enemy_hits=("dotabuff_enemy_hits", "sum"),
+        )
+        .sort_values(["dotabuff_enemy_hits", "dotabuff_disadvantage"], ascending=[False, False])
+    )
+    return signal_df
+
+
 def prepare_results_dataframe(
     rows: list[dict],
     hero_df: pd.DataFrame,
     selected_role: str,
     selected_enemy_names: Iterable[str],
+    dotabuff_signal_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Convert explorer rows into a filtered, display-ready DataFrame."""
     results_df = pd.DataFrame(rows)
@@ -294,15 +389,51 @@ def prepare_results_dataframe(
     merged_df["wins"] = pd.to_numeric(merged_df["wins"], errors="coerce").fillna(0).astype(int)
     merged_df["games_played"] = pd.to_numeric(merged_df["games_played"], errors="coerce").fillna(0).astype(int)
     merged_df["win_rate"] = pd.to_numeric(merged_df["win_rate"], errors="coerce").fillna(0.0)
-    merged_df = merged_df.sort_values(["win_rate", "games_played"], ascending=[False, False])
-
     merged_df["avg_enemy_overlap"] = pd.to_numeric(
         merged_df["avg_enemy_overlap"], errors="coerce"
     ).fillna(0.0)
 
+    if dotabuff_signal_df is not None and not dotabuff_signal_df.empty:
+        merged_df = merged_df.merge(dotabuff_signal_df, on="localized_name", how="left")
+    else:
+        merged_df["dotabuff_disadvantage"] = 0.0
+        merged_df["dotabuff_matches"] = 0.0
+        merged_df["dotabuff_enemy_hits"] = 0.0
+
+    merged_df["dotabuff_disadvantage"] = pd.to_numeric(
+        merged_df["dotabuff_disadvantage"], errors="coerce"
+    ).fillna(0.0)
+    merged_df["dotabuff_matches"] = pd.to_numeric(
+        merged_df["dotabuff_matches"], errors="coerce"
+    ).fillna(0).astype(int)
+    merged_df["dotabuff_enemy_hits"] = pd.to_numeric(
+        merged_df["dotabuff_enemy_hits"], errors="coerce"
+    ).fillna(0).astype(int)
+
+    merged_df["hybrid_score"] = (
+        merged_df["win_rate"]
+        + (merged_df["dotabuff_disadvantage"] * 0.75)
+        + (merged_df["dotabuff_enemy_hits"] * 2.0)
+    ).round(2)
+    merged_df = merged_df.sort_values(
+        ["hybrid_score", "win_rate", "games_played"], ascending=[False, False, False]
+    )
+
     return merged_df.loc[
         :,
-        ["image_url", "localized_name", "games_played", "wins", "win_rate", "avg_enemy_overlap", "roles"],
+        [
+            "image_url",
+            "localized_name",
+            "games_played",
+            "wins",
+            "win_rate",
+            "avg_enemy_overlap",
+            "dotabuff_disadvantage",
+            "dotabuff_matches",
+            "dotabuff_enemy_hits",
+            "hybrid_score",
+            "roles",
+        ],
     ]
 
 
@@ -367,9 +498,17 @@ def main() -> None:
         st.error(f"Explorer verisi islenemedi: {exc}")
         return
 
+    try:
+        dotabuff_signal_df = build_dotabuff_signal_dataframe(selected_hero_names, hero_df)
+    except (requests.RequestException, ValueError) as exc:
+        st.warning(f"Dotabuff verisi eklenemedi: {exc}")
+        dotabuff_signal_df = pd.DataFrame()
+
     data_source_label = "OpenDota Explorer"
     if rows:
-        results_df = prepare_results_dataframe(rows, hero_df, selected_role, selected_hero_names)
+        results_df = prepare_results_dataframe(
+            rows, hero_df, selected_role, selected_hero_names, dotabuff_signal_df
+        )
     else:
         try:
             fallback_rows_df = build_fallback_matchup_dataframe(selected_enemy_ids, min_games_threshold)
@@ -385,7 +524,11 @@ def main() -> None:
 
         data_source_label = "OpenDota Hero Matchups"
         results_df = prepare_results_dataframe(
-            fallback_rows_df.to_dict("records"), hero_df, selected_role, selected_hero_names
+            fallback_rows_df.to_dict("records"),
+            hero_df,
+            selected_role,
+            selected_hero_names,
+            dotabuff_signal_df,
         )
 
     if results_df.empty:
@@ -408,6 +551,10 @@ def main() -> None:
             "wins": "Wins",
             "win_rate": "Win Rate (%)",
             "avg_enemy_overlap": "Avg Enemy Match Count",
+            "dotabuff_disadvantage": "Dotabuff Disadvantage (%)",
+            "dotabuff_matches": "Dotabuff Matches",
+            "dotabuff_enemy_hits": "Dotabuff Enemy Hits",
+            "hybrid_score": "Hybrid Score",
             "roles": "Roles",
         }
     )
