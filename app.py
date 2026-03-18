@@ -13,6 +13,31 @@ REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
 
 
+def matches_role_filter(roles: list[str], selected_role: str) -> bool:
+    """Match UI roles against OpenDota roles and a few inferred lane heuristics."""
+    role_set = set(roles)
+
+    if selected_role == "Hepsi":
+        return True
+    if selected_role in {"Carry", "Support", "Disabler", "Durable"}:
+        return selected_role in role_set
+    if selected_role == "Mid":
+        # OpenDota does not expose "Mid" directly in hero roles, so infer it from
+        # common mid hero traits while excluding hard supports.
+        return (
+            "Support" not in role_set
+            and bool(role_set.intersection({"Carry", "Nuker", "Escape", "Disabler"}))
+        )
+    if selected_role == "Offlane":
+        # OpenDota does not expose "Offlane" directly either; durable initiators
+        # and utility frontliners are the closest approximation.
+        return (
+            "Support" not in role_set
+            and bool(role_set.intersection({"Durable", "Initiator", "Disabler"}))
+        )
+    return False
+
+
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
 def fetch_heroes() -> list[dict]:
     """Fetch and cache the hero catalog from OpenDota."""
@@ -140,7 +165,7 @@ def prepare_results_dataframe(
         merged_df = merged_df[~merged_df["localized_name"].isin(enemy_name_set)]
 
     if selected_role != "Hepsi":
-        merged_df = merged_df[merged_df["roles"].apply(lambda roles: selected_role in roles)]
+        merged_df = merged_df[merged_df["roles"].apply(lambda roles: matches_role_filter(roles, selected_role))]
 
     if merged_df.empty:
         return merged_df
