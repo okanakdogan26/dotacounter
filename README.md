@@ -1,0 +1,56 @@
+# Dota 2 Counter Picker
+
+Python, Streamlit ve OpenDota API kullanarak gelistirilmis bir Dota 2 counter picker uygulamasi.
+
+## Ozellikler
+
+- OpenDota `/api/heroes` endpointinden hero listesini cache'ler
+- En fazla 5 rakip hero secimi sunar
+- Rol filtresi uygular: `Hepsi`, `Carry`, `Support`, `Mid`, `Offlane`, `Disabler`, `Durable`
+- OpenDota Explorer API uzerinden son 30 gun verisiyle counter hero sorgular
+- Minimum mac sayisi esigi slider'i ile orneklem kalitesini kontrol eder
+- Sonuclari tablo ve bar chart olarak gosterir
+- Dusuk veri veya API hatalari icin kullanici dostu uyari mesaji verir
+
+## Yerel Calistirma
+
+### 1. Sanal ortam olustur
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 2. Bagimliliklari kur
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Uygulamayi baslat
+
+```bash
+streamlit run app.py
+```
+
+## Streamlit Community Cloud Deploy
+
+1. Bu projeyi GitHub reposuna push edin.
+2. `https://share.streamlit.io/` veya Streamlit Community Cloud paneline gidin.
+3. `New app` secin.
+4. GitHub repository olarak bu projeyi secin.
+5. `Branch` olarak `main` secin.
+6. `Main file path` olarak `app.py` girin.
+7. Deploy edin.
+
+## Proje Dosyalari
+
+- `app.py`: Streamlit uygulamasi
+- `requirements.txt`: Python bagimliliklari
+- `.gitignore`: Git disinda tutulacak dosyalar
+
+## Notlar
+
+- Uygulama OpenDota API'sine runtime sirasinda istek atar.
+- Sonuclar son 30 gun verisine dayanir.
+- Dusuk mac sayili sonuclar slider ile filtrelenebilir.
