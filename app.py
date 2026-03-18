@@ -73,7 +73,8 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
     columns = st.columns(3)
     for index, (_, hero_row) in enumerate(top_results.iterrows()):
         with columns[index % 3]:
-            st.image(hero_row["image_url"], use_container_width=True)
+            if hero_row.get("image_url"):
+                st.image(hero_row["image_url"], use_container_width=True)
             st.markdown(f"**{hero_row['localized_name']}**")
             st.caption(
                 f"Win Rate: %{hero_row['win_rate']:.2f} | "
@@ -187,11 +188,14 @@ def build_counter_sql(selected_enemy_ids: Iterable[int], min_games_threshold: in
 def build_hero_dataframe(heroes: list[dict]) -> pd.DataFrame:
     """Normalize hero metadata into a DataFrame."""
     hero_df = pd.DataFrame(heroes)
-    required_columns = {"id", "localized_name", "roles", "img"}
+    required_columns = {"id", "localized_name", "roles"}
     missing_columns = required_columns.difference(hero_df.columns)
     if missing_columns:
         missing_text = ", ".join(sorted(missing_columns))
         raise ValueError(f"Hero response is missing columns: {missing_text}")
+
+    if "img" not in hero_df.columns:
+        hero_df["img"] = ""
 
     hero_df = hero_df.loc[:, ["id", "localized_name", "roles", "img"]].copy()
     hero_df["roles"] = hero_df["roles"].apply(lambda value: value if isinstance(value, list) else [])
@@ -286,7 +290,10 @@ def prepare_results_dataframe(
         merged_df["avg_enemy_overlap"], errors="coerce"
     ).fillna(0.0)
 
-    return merged_df.loc[:, ["localized_name", "games_played", "wins", "win_rate", "avg_enemy_overlap", "roles"]]
+    return merged_df.loc[
+        :,
+        ["image_url", "localized_name", "games_played", "wins", "win_rate", "avg_enemy_overlap", "roles"],
+    ]
 
 
 def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int]:
