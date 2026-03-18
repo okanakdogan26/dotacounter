@@ -69,6 +69,17 @@ def fetch_counter_rows(selected_enemy_ids: tuple[int, ...], min_games_threshold:
     return rows
 
 
+@st.cache_data(ttl=60 * 30, show_spinner=False)
+def fetch_hero_matchups(hero_id: int) -> list[dict]:
+    """Fetch historical hero matchup data for a single enemy hero."""
+    response = requests.get(f"{API_BASE_URL}/heroes/{hero_id}/matchups", timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list):
+        raise ValueError("OpenDota hero matchup response is not a list.")
+    return rows
+
+
 def build_counter_sql(selected_enemy_ids: Iterable[int], min_games_threshold: int) -> str:
     """Build the Explorer SQL query for counter heroes in the last 30 days."""
     enemy_ids = sorted({int(hero_id) for hero_id in selected_enemy_ids})
@@ -141,6 +152,56 @@ def build_hero_dataframe(heroes: list[dict]) -> pd.DataFrame:
     hero_df = hero_df.loc[:, ["id", "localized_name", "roles"]].copy()
     hero_df["roles"] = hero_df["roles"].apply(lambda value: value if isinstance(value, list) else [])
     return hero_df
+
+
+def build_fallback_matchup_dataframe(
+    selected_enemy_ids: Iterable[int],
+    min_games_threshold: int,
+) -> pd.DataFrame:
+    """
+    Build fallback counter rows from hero matchup endpoints.
+
+    Explorer data is professional-match focused and often sparse for normal pub drafts.
+    This fallback aggregates per-enemy historical matchup data so the app remains usable.
+    """
+    aggregated_rows: list[dict] = []
+
+    for enemy_id in selected_enemy_ids:
+        for row in fetch_hero_matchups(int(enemy_id)):
+            games_played = int(row.get("games_played", 0) or 0)
+            enemy_wins = int(row.get("wins", 0) or 0)
+            if games_played <= 0:
+                continue
+
+            aggregated_rows.append(
+                {
+                    "hero_id": int(row["hero_id"]),
+                    "games_played": games_played,
+                    "candidate_wins": max(games_played - enemy_wins, 0),
+                    "enemy_overlap": 1,
+                }
+            )
+
+    if not aggregated_rows:
+        return pd.DataFrame()
+
+    fallback_df = pd.DataFrame(aggregated_rows)
+    fallback_df = (
+        fallback_df.groupby("hero_id", as_index=False)
+        .agg(
+            games_played=("games_played", "sum"),
+            wins=("candidate_wins", "sum"),
+            enemy_overlap=("enemy_overlap", "sum"),
+        )
+    )
+    fallback_df = fallback_df[fallback_df["games_played"] >= int(min_games_threshold)]
+    if fallback_df.empty:
+        return fallback_df
+
+    fallback_df["avg_enemy_overlap"] = fallback_df["enemy_overlap"].astype(float)
+    fallback_df["win_rate"] = (100.0 * fallback_df["wins"] / fallback_df["games_played"]).round(2)
+    fallback_df = fallback_df.sort_values(["win_rate", "games_played"], ascending=[False, False])
+    return fallback_df.loc[:, ["hero_id", "games_played", "wins", "win_rate", "avg_enemy_overlap"]]
 
 
 def prepare_results_dataframe(
@@ -244,20 +305,35 @@ def main() -> None:
         st.error(f"Explorer verisi islenemedi: {exc}")
         return
 
-    if not rows:
-        st.warning(
-            "Secili rakipler icin son 30 gunde yeterli mac verisi bulunamadi. "
-            "Esigi dusurup tekrar deneyin."
-        )
-        return
+    data_source_label = "OpenDota Explorer"
+    if rows:
+        results_df = prepare_results_dataframe(rows, hero_df, selected_role, selected_hero_names)
+    else:
+        try:
+            fallback_rows_df = build_fallback_matchup_dataframe(selected_enemy_ids, min_games_threshold)
+        except (requests.RequestException, ValueError) as exc:
+            st.error(f"OpenDota matchup verisi alinamadi: {exc}")
+            return
 
-    results_df = prepare_results_dataframe(rows, hero_df, selected_role, selected_hero_names)
+        if fallback_rows_df.empty:
+            st.warning(
+                "Secili rakipler icin yeterli veri bulunamadi. Esigi dusurup tekrar deneyin."
+            )
+            return
+
+        data_source_label = "OpenDota Hero Matchups"
+        results_df = prepare_results_dataframe(
+            fallback_rows_df.to_dict("records"), hero_df, selected_role, selected_hero_names
+        )
+
     if results_df.empty:
         st.warning(
             "Secilen rol icin yeterli veri bulunamadi. Farkli bir rol, hero kombinasyonu "
             "veya daha dusuk mac esigi deneyin."
         )
         return
+
+    st.caption(f"Veri kaynagi: {data_source_label}")
 
     display_df = results_df.copy()
     display_df["roles"] = display_df["roles"].apply(lambda roles: ", ".join(roles))
