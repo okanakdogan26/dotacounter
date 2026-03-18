@@ -337,7 +337,7 @@ def prepare_results_dataframe(
     """Convert explorer rows into a filtered, display-ready DataFrame."""
     results_df = pd.DataFrame(rows)
     if results_df.empty:
-        return results_df
+        results_df = pd.DataFrame(columns=["hero_id", "games_played", "wins", "win_rate", "avg_enemy_overlap"])
 
     if "avg_enemy_overlap" not in results_df.columns:
         results_df["avg_enemy_overlap"] = 0.0
@@ -371,6 +371,23 @@ def prepare_results_dataframe(
         merged_df["dotabuff_disadvantage"] = 0.0
         merged_df["dotabuff_matches"] = 0
         merged_df["dotabuff_enemy_hits"] = 0
+
+    # Include heroes that exist only in the local Dotabuff dataset but were absent
+    # from the OpenDota result set, so strong manual counter signals can still appear.
+    if dotabuff_signal_df is not None and not dotabuff_signal_df.empty:
+        existing_names = set(merged_df["localized_name"].dropna().tolist())
+        dotabuff_only_df = dotabuff_signal_df[~dotabuff_signal_df["localized_name"].isin(existing_names)].copy()
+        if not dotabuff_only_df.empty:
+            hero_lookup_df = hero_df.loc[:, ["localized_name", "name", "img", "roles"]].copy()
+            dotabuff_only_df = dotabuff_only_df.merge(hero_lookup_df, on="localized_name", how="left")
+            dotabuff_only_df["image_url"] = dotabuff_only_df.apply(
+                lambda row: get_hero_image_url(row.get("img"), row.get("name")), axis=1
+            )
+            dotabuff_only_df["games_played"] = 0
+            dotabuff_only_df["wins"] = 0
+            dotabuff_only_df["win_rate"] = 0.0
+            dotabuff_only_df["avg_enemy_overlap"] = 0.0
+            merged_df = pd.concat([merged_df, dotabuff_only_df], ignore_index=True, sort=False)
 
     merged_df["dotabuff_disadvantage"] = pd.to_numeric(
         merged_df["dotabuff_disadvantage"], errors="coerce"
