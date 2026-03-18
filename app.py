@@ -67,7 +67,7 @@ def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFr
     for index, (_, hero_row) in enumerate(selected_df.iterrows()):
         with columns[index % len(columns)]:
             if hero_row["image_url"]:
-                st.image(hero_row["image_url"], use_container_width=True)
+                st.image(hero_row["image_url"], width=140)
             st.markdown(f"**{hero_row['localized_name']}**")
 
 
@@ -78,11 +78,11 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
         return
 
     st.subheader("One Cikan Counterlar")
-    columns = st.columns(3)
+    columns = st.columns(4)
     for index, (_, hero_row) in enumerate(top_results.iterrows()):
-        with columns[index % 3]:
+        with columns[index % 4]:
             if hero_row.get("image_url"):
-                st.image(hero_row["image_url"], use_container_width=True)
+                st.image(hero_row["image_url"], width=180)
             st.markdown(f"**{hero_row['localized_name']}**")
             st.caption(
                 f"Win Rate: %{hero_row['win_rate']:.2f} | "
