@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
-from io import StringIO
 from typing import Iterable
 
 import pandas as pd
@@ -14,6 +14,7 @@ STEAM_HERO_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/
 ROLE_OPTIONS = ["Hepsi", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
+BACKEND_API_URL = os.getenv("BACKEND_API_URL", "").rstrip("/")
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -295,70 +296,36 @@ def build_fallback_matchup_dataframe(
     return fallback_df.loc[:, ["hero_id", "games_played", "wins", "win_rate", "avg_enemy_overlap"]]
 
 
-@st.cache_data(ttl=60 * 60 * 12, show_spinner=False)
-def fetch_dotabuff_worst_versus(hero_slug: str) -> list[dict]:
-    """
-    Fetch Dotabuff 'Worst Versus This Week' rows for a hero.
-
-    This is an unofficial HTML parse, so failures are tolerated by callers.
-    """
-    response = requests.get(
-        f"https://www.dotabuff.com/heroes/{hero_slug}",
-        timeout=REQUEST_TIMEOUT,
-        headers=REQUEST_HEADERS,
-    )
-    response.raise_for_status()
-
-    tables = pd.read_html(StringIO(response.text))
-    target_table = None
-    for table in tables:
-        normalized_columns = [str(column).strip() for column in table.columns]
-        if normalized_columns == ["Hero", "Disadvantage", "Win Rate", "Matches"]:
-            target_table = table
-
-    if target_table is None:
-        return []
-
-    normalized_df = target_table.copy()
-    normalized_df.columns = ["Hero", "Disadvantage", "Win Rate", "Matches"]
-    normalized_df["Hero"] = normalized_df["Hero"].astype(str).str.strip()
-    normalized_df["Disadvantage"] = (
-        normalized_df["Disadvantage"].astype(str).str.replace("%", "", regex=False)
-    )
-    normalized_df["Win Rate"] = normalized_df["Win Rate"].astype(str).str.replace("%", "", regex=False)
-    normalized_df["Matches"] = normalized_df["Matches"].astype(str).str.replace(",", "", regex=False)
-    return normalized_df.to_dict("records")
-
-
 def build_dotabuff_signal_dataframe(
     selected_enemy_names: Iterable[str],
     hero_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Aggregate Dotabuff worst-versus data across selected enemy heroes."""
+    """Aggregate Dotabuff worst-versus data from the backend service."""
+    if not BACKEND_API_URL:
+        return pd.DataFrame()
+
     selected_df = hero_df[hero_df["localized_name"].isin(selected_enemy_names)].copy()
     if selected_df.empty:
         return pd.DataFrame()
 
-    signal_rows: list[dict] = []
-    for _, hero_row in selected_df.iterrows():
-        hero_slug = get_dotabuff_hero_slug(hero_row["name"])
-        try:
-            rows = fetch_dotabuff_worst_versus(hero_slug)
-        except requests.HTTPError as exc:
-            status_code = exc.response.status_code if exc.response is not None else None
-            if status_code in {401, 403, 429}:
-                continue
-            raise
-
-        for row in rows:
-            signal_rows.append(
-                {
-                    "localized_name": row["Hero"],
-                    "dotabuff_disadvantage": pd.to_numeric(row["Disadvantage"], errors="coerce"),
-                    "dotabuff_matches": pd.to_numeric(row["Matches"], errors="coerce"),
-                    "dotabuff_enemy_hits": 1,
-                }
-            )
+    request_payload = {
+        "heroes": [
+            {
+                "hero_slug": get_dotabuff_hero_slug(row["name"]),
+                "localized_name": row["localized_name"],
+            }
+            for _, row in selected_df.iterrows()
+        ]
+    }
+    response = requests.post(
+        f"{BACKEND_API_URL}/dotabuff/worst-versus/batch",
+        json=request_payload,
+        timeout=REQUEST_TIMEOUT,
+        headers=REQUEST_HEADERS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    signal_rows = payload.get("rows", [])
 
     if not signal_rows:
         return pd.DataFrame()
@@ -522,11 +489,18 @@ def main() -> None:
         st.error(f"Explorer verisi islenemedi: {exc}")
         return
 
+    dotabuff_status = "devre disi"
     try:
         dotabuff_signal_df = build_dotabuff_signal_dataframe(selected_hero_names, hero_df)
+        if BACKEND_API_URL and not dotabuff_signal_df.empty:
+            dotabuff_status = "backend uzerinden aktif"
+        elif BACKEND_API_URL:
+            dotabuff_status = "backend bagli, fakat veri donmedi"
     except (requests.RequestException, ValueError) as exc:
-        st.warning(f"Dotabuff verisi eklenemedi: {exc}")
+        st.warning(f"Dotabuff backend verisi eklenemedi: {exc}")
         dotabuff_signal_df = pd.DataFrame()
+        if BACKEND_API_URL:
+            dotabuff_status = "backend hatasi"
 
     data_source_label = "OpenDota Explorer"
     if rows:
@@ -563,6 +537,7 @@ def main() -> None:
         return
 
     st.caption(f"Veri kaynagi: {data_source_label}")
+    st.caption(f"Dotabuff durumu: {dotabuff_status}")
     render_counter_cards(results_df)
 
     display_df = results_df.copy()
