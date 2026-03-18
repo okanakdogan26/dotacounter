@@ -76,6 +76,23 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/dotabuff/test/{hero_slug}")
+def dotabuff_test(hero_slug: str) -> dict[str, Any]:
+    """Debug endpoint to inspect a single Dotabuff parse result."""
+    try:
+        rows = fetch_dotabuff_worst_versus(hero_slug)
+    except HTTPException as exc:
+        raise exc
+    except (requests.RequestException, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {
+        "hero_slug": hero_slug,
+        "row_count": len(rows),
+        "sample": rows[:5],
+    }
+
+
 @app.post("/dotabuff/worst-versus/batch")
 def dotabuff_worst_versus_batch(payload: DotabuffBatchRequest) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
