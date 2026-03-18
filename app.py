@@ -21,6 +21,20 @@ REQUEST_HEADERS = {
         "Chrome/122.0.0.0 Safari/537.36"
     )
 }
+DOTABUFF_HERO_SLUG_OVERRIDES = {
+    "npc_dota_hero_antimage": "anti-mage",
+    "npc_dota_hero_clockwerk": "clockwerk",
+    "npc_dota_hero_furion": "natures-prophet",
+    "npc_dota_hero_necrolyte": "necrophos",
+    "npc_dota_hero_nevermore": "shadow-fiend",
+    "npc_dota_hero_queenofpain": "queen-of-pain",
+    "npc_dota_hero_rattletrap": "clockwerk",
+    "npc_dota_hero_skeleton_king": "wraith-king",
+    "npc_dota_hero_treant": "treant-protector",
+    "npc_dota_hero_vengefulspirit": "vengeful-spirit",
+    "npc_dota_hero_windrunner": "windranger",
+    "npc_dota_hero_zuus": "zeus",
+}
 
 
 def matches_role_filter(roles: list[str], selected_role: str) -> bool:
@@ -64,6 +78,8 @@ def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> 
 
 def get_dotabuff_hero_slug(hero_name: str) -> str:
     """Convert OpenDota internal hero names into Dotabuff hero slugs."""
+    if hero_name in DOTABUFF_HERO_SLUG_OVERRIDES:
+        return DOTABUFF_HERO_SLUG_OVERRIDES[hero_name]
     return hero_name.removeprefix("npc_dota_hero_").replace("_", "-")
 
 
@@ -326,7 +342,15 @@ def build_dotabuff_signal_dataframe(
     signal_rows: list[dict] = []
     for _, hero_row in selected_df.iterrows():
         hero_slug = get_dotabuff_hero_slug(hero_row["name"])
-        for row in fetch_dotabuff_worst_versus(hero_slug):
+        try:
+            rows = fetch_dotabuff_worst_versus(hero_slug)
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code in {401, 403, 429}:
+                continue
+            raise
+
+        for row in rows:
             signal_rows.append(
                 {
                     "localized_name": row["Hero"],
