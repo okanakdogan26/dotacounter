@@ -4,6 +4,9 @@ Python, Streamlit ve OpenDota API kullanarak gelistirilmis bir Dota 2 counter pi
 
 Bu repo Streamlit tabanli bir Dota 2 counter picker uygulamasidir.
 
+OpenDota verisini ana kaynak olarak kullanir ve istege bagli olarak repo icinde tutulan
+yerel Dotabuff `Worst Versus` dataset'i ile siralamayi guclendirir.
+
 ## Ozellikler
 
 - OpenDota `/api/heroes` endpointinden hero listesini cache'ler
@@ -12,6 +15,7 @@ Bu repo Streamlit tabanli bir Dota 2 counter picker uygulamasidir.
 - OpenDota Explorer API uzerinden son 30 gun verisiyle counter hero sorgular
 - Minimum mac sayisi esigi slider'i ile orneklem kalitesini kontrol eder
 - Stabilize win rate, orneklem buyuklugu ve rakip kapsama oranina dayali `confidence score` uretir
+- Yerel Dotabuff `Worst Versus` dataset'i varsa `hybrid score` ile siralamayi guclendirir
 - Sonuclari tablo ve bar chart olarak gosterir
 - Dusuk veri veya API hatalari icin kullanici dostu uyari mesaji verir
 
@@ -48,11 +52,13 @@ streamlit run app.py
 ## Proje Dosyalari
 
 - `app.py`: Streamlit uygulamasi
+- `data/dotabuff_worst_versus.json`: Elle veya yari otomatik doldurulan Dotabuff dataset'i
 - `requirements.txt`: Python bagimliliklari
 - `.gitignore`: Git disinda tutulacak dosyalar
 
 ## Notlar
 
 - Uygulama OpenDota API'sine runtime sirasinda istek atar.
+- Dotabuff verisi canli scrape edilmez; `data/dotabuff_worst_versus.json` icinden okunur.
 - Sonuclar son 30 gun verisine dayanir.
 - Dusuk mac sayili sonuclar slider ile filtrelenebilir.
