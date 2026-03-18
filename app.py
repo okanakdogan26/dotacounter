@@ -9,6 +9,7 @@ import streamlit as st
 
 API_BASE_URL = "https://api.opendota.com/api"
 STEAM_CDN_BASE_URL = "https://cdn.cloudflare.steamstatic.com"
+STEAM_HERO_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/heroes"
 ROLE_OPTIONS = ["Hepsi", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
@@ -39,13 +40,18 @@ def matches_role_filter(roles: list[str], selected_role: str) -> bool:
     return False
 
 
-def get_hero_image_url(image_path: str | None) -> str:
-    """Convert OpenDota relative hero image paths into full CDN URLs."""
+def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> str:
+    """Convert OpenDota hero metadata into a full Steam CDN image URL."""
     if not image_path:
+        if hero_name:
+            hero_slug = hero_name.removeprefix("npc_dota_hero_")
+            return f"{STEAM_HERO_IMAGE_BASE_URL}/{hero_slug}.png"
         return ""
     if image_path.startswith("http://") or image_path.startswith("https://"):
         return image_path
-    return f"{STEAM_CDN_BASE_URL}{image_path}"
+    if image_path.startswith("/apps/dota2/images/dota_react/heroes/"):
+        return f"{STEAM_CDN_BASE_URL}{image_path}"
+    return f"{STEAM_HERO_IMAGE_BASE_URL}/{image_path.rsplit('/', 1)[-1].replace('.full.png', '.png')}"
 
 
 def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFrame) -> None:
@@ -54,7 +60,9 @@ def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFr
     if selected_df.empty:
         return
 
-    selected_df["image_url"] = selected_df["img"].apply(get_hero_image_url)
+    selected_df["image_url"] = selected_df.apply(
+        lambda row: get_hero_image_url(row["img"], row.get("name")), axis=1
+    )
     columns = st.columns(min(5, len(selected_df)))
     for index, (_, hero_row) in enumerate(selected_df.iterrows()):
         with columns[index % len(columns)]:
@@ -188,7 +196,7 @@ def build_counter_sql(selected_enemy_ids: Iterable[int], min_games_threshold: in
 def build_hero_dataframe(heroes: list[dict]) -> pd.DataFrame:
     """Normalize hero metadata into a DataFrame."""
     hero_df = pd.DataFrame(heroes)
-    required_columns = {"id", "localized_name", "roles"}
+    required_columns = {"id", "name", "localized_name", "roles"}
     missing_columns = required_columns.difference(hero_df.columns)
     if missing_columns:
         missing_text = ", ".join(sorted(missing_columns))
@@ -197,7 +205,7 @@ def build_hero_dataframe(heroes: list[dict]) -> pd.DataFrame:
     if "img" not in hero_df.columns:
         hero_df["img"] = ""
 
-    hero_df = hero_df.loc[:, ["id", "localized_name", "roles", "img"]].copy()
+    hero_df = hero_df.loc[:, ["id", "name", "localized_name", "roles", "img"]].copy()
     hero_df["roles"] = hero_df["roles"].apply(lambda value: value if isinstance(value, list) else [])
     hero_df["img"] = hero_df["img"].fillna("")
     return hero_df
@@ -269,7 +277,9 @@ def prepare_results_dataframe(
 
     merged_df = results_df.merge(hero_df, left_on="hero_id", right_on="id", how="left")
     merged_df["localized_name"] = merged_df["localized_name"].fillna("Unknown Hero")
-    merged_df["image_url"] = merged_df["img"].apply(get_hero_image_url)
+    merged_df["image_url"] = merged_df.apply(
+        lambda row: get_hero_image_url(row["img"], row.get("name")), axis=1
+    )
     enemy_name_set = set(selected_enemy_names)
 
     if enemy_name_set:
