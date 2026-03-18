@@ -8,6 +8,7 @@ import requests
 import streamlit as st
 
 API_BASE_URL = "https://api.opendota.com/api"
+STEAM_CDN_BASE_URL = "https://cdn.cloudflare.steamstatic.com"
 ROLE_OPTIONS = ["Hepsi", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
@@ -36,6 +37,49 @@ def matches_role_filter(roles: list[str], selected_role: str) -> bool:
             and bool(role_set.intersection({"Durable", "Initiator", "Disabler"}))
         )
     return False
+
+
+def get_hero_image_url(image_path: str | None) -> str:
+    """Convert OpenDota relative hero image paths into full CDN URLs."""
+    if not image_path:
+        return ""
+    if image_path.startswith("http://") or image_path.startswith("https://"):
+        return image_path
+    return f"{STEAM_CDN_BASE_URL}{image_path}"
+
+
+def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFrame) -> None:
+    """Render selected enemy heroes as a compact image grid."""
+    selected_df = hero_df[hero_df["localized_name"].isin(selected_hero_names)].copy()
+    if selected_df.empty:
+        return
+
+    selected_df["image_url"] = selected_df["img"].apply(get_hero_image_url)
+    columns = st.columns(min(5, len(selected_df)))
+    for index, (_, hero_row) in enumerate(selected_df.iterrows()):
+        with columns[index % len(columns)]:
+            if hero_row["image_url"]:
+                st.image(hero_row["image_url"], use_container_width=True)
+            st.markdown(f"**{hero_row['localized_name']}**")
+
+
+def render_counter_cards(results_df: pd.DataFrame) -> None:
+    """Render top counter heroes as visual cards."""
+    top_results = results_df.head(6)
+    if top_results.empty:
+        return
+
+    st.subheader("One Cikan Counterlar")
+    columns = st.columns(3)
+    for index, (_, hero_row) in enumerate(top_results.iterrows()):
+        with columns[index % 3]:
+            st.image(hero_row["image_url"], use_container_width=True)
+            st.markdown(f"**{hero_row['localized_name']}**")
+            st.caption(
+                f"Win Rate: %{hero_row['win_rate']:.2f} | "
+                f"Mac: {hero_row['games_played']} | "
+                f"Eslesme: {hero_row['avg_enemy_overlap']:.2f}"
+            )
 
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
@@ -143,14 +187,15 @@ def build_counter_sql(selected_enemy_ids: Iterable[int], min_games_threshold: in
 def build_hero_dataframe(heroes: list[dict]) -> pd.DataFrame:
     """Normalize hero metadata into a DataFrame."""
     hero_df = pd.DataFrame(heroes)
-    required_columns = {"id", "localized_name", "roles"}
+    required_columns = {"id", "localized_name", "roles", "img"}
     missing_columns = required_columns.difference(hero_df.columns)
     if missing_columns:
         missing_text = ", ".join(sorted(missing_columns))
         raise ValueError(f"Hero response is missing columns: {missing_text}")
 
-    hero_df = hero_df.loc[:, ["id", "localized_name", "roles"]].copy()
+    hero_df = hero_df.loc[:, ["id", "localized_name", "roles", "img"]].copy()
     hero_df["roles"] = hero_df["roles"].apply(lambda value: value if isinstance(value, list) else [])
+    hero_df["img"] = hero_df["img"].fillna("")
     return hero_df
 
 
@@ -220,6 +265,7 @@ def prepare_results_dataframe(
 
     merged_df = results_df.merge(hero_df, left_on="hero_id", right_on="id", how="left")
     merged_df["localized_name"] = merged_df["localized_name"].fillna("Unknown Hero")
+    merged_df["image_url"] = merged_df["img"].apply(get_hero_image_url)
     enemy_name_set = set(selected_enemy_names)
 
     if enemy_name_set:
@@ -292,9 +338,8 @@ def main() -> None:
         st.info("Devam etmek icin kenar cubugundan en az bir rakip hero secin.")
         return
 
-    selected_enemy_label = ", ".join(selected_hero_names)
     st.subheader("Secili Rakipler")
-    st.write(selected_enemy_label)
+    render_selected_hero_grid(selected_hero_names, hero_df)
 
     try:
         rows = fetch_counter_rows(selected_enemy_ids, min_games_threshold)
@@ -334,11 +379,13 @@ def main() -> None:
         return
 
     st.caption(f"Veri kaynagi: {data_source_label}")
+    render_counter_cards(results_df)
 
     display_df = results_df.copy()
     display_df["roles"] = display_df["roles"].apply(lambda roles: ", ".join(roles))
     display_df = display_df.rename(
         columns={
+            "image_url": "Image",
             "localized_name": "Hero",
             "games_played": "Games",
             "wins": "Wins",
@@ -349,7 +396,14 @@ def main() -> None:
     )
 
     st.subheader("Counter Sonuclari")
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Image": st.column_config.ImageColumn("Image", help="Hero resmi", width="medium"),
+        },
+    )
 
     chart_df = results_df.loc[:, ["localized_name", "win_rate"]].set_index("localized_name")
     st.subheader("Win Rate Grafigi")
