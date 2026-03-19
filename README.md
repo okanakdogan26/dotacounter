@@ -53,6 +53,8 @@ streamlit run app.py
 
 - `app.py`: Streamlit uygulamasi
 - `data/dotabuff_worst_versus.json`: Elle veya yari otomatik doldurulan Dotabuff dataset'i
+- `data/dotabuff_import_template.json`: Dotabuff veri iceri aktarma ornek dosyasi
+- `scripts/import_dotabuff_data.py`: Import dosyasini ana dataset'e merge eden script
 - `requirements.txt`: Python bagimliliklari
 - `.gitignore`: Git disinda tutulacak dosyalar
 
@@ -62,3 +64,28 @@ streamlit run app.py
 - Dotabuff verisi canli scrape edilmez; `data/dotabuff_worst_versus.json` icinden okunur.
 - Sonuclar son 30 gun verisine dayanir.
 - Dusuk mac sayili sonuclar slider ile filtrelenebilir.
+
+## Dotabuff Veri Import
+
+Yerel Dotabuff dataset'ini toplu guncellemek icin:
+
+```bash
+python3 scripts/import_dotabuff_data.py data/dotabuff_import_template.json
+```
+
+Import dosyasi `heroes` objesi altinda su formatta veri bekler:
+
+```json
+{
+  "heroes": {
+    "Elder Titan": [
+      {
+        "hero": "Chen",
+        "disadvantage_pct": 6.12,
+        "win_rate_pct": 43.21,
+        "matches": 8234
+      }
+    ]
+  }
+}
+```

@@ -95,10 +95,17 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
             if hero_row.get("image_url"):
                 st.image(hero_row["image_url"], width=180)
             st.markdown(f"**{hero_row['localized_name']}**")
+            has_opendota_data = int(hero_row["games_played"]) > 0
+            win_rate_text = (
+                f"%{hero_row['win_rate']:.2f}"
+                if has_opendota_data
+                else "N/A (Dotabuff-only)"
+            )
+            games_text = str(int(hero_row["games_played"])) if has_opendota_data else "OpenDota veri yok"
             st.caption(
                 f"Hibrit Skor: {hero_row['hybrid_score']:.2f} | "
-                f"Win Rate: %{hero_row['win_rate']:.2f} | "
-                f"Mac: {hero_row['games_played']}"
+                f"Win Rate: {win_rate_text} | "
+                f"Mac: {games_text}"
             )
 
 
@@ -408,11 +415,20 @@ def prepare_results_dataframe(
     merged_df["stabilized_win_rate"] = (
         (merged_df["wins"] + 25.0) / (merged_df["games_played"] + 50.0) * 100.0
     ).round(2)
+    merged_df["dotabuff_only"] = (
+        (merged_df["games_played"] == 0) & (merged_df["dotabuff_enemy_hits"] > 0)
+    )
     merged_df["confidence_score"] = (
         merged_df["stabilized_win_rate"] * 0.55
         + merged_df["sample_factor"] * 25.0
         + merged_df["overlap_factor"] * 15.0
         + merged_df["role_factor"] * 5.0
+    ).round(2)
+    merged_df.loc[merged_df["dotabuff_only"], "confidence_score"] = (
+        25.0
+        + (merged_df.loc[merged_df["dotabuff_only"], "dotabuff_disadvantage"] * 4.0)
+        + (merged_df.loc[merged_df["dotabuff_only"], "dotabuff_enemy_hits"] * 5.0)
+        + ((merged_df.loc[merged_df["dotabuff_only"], "dotabuff_matches"] / 10000.0).clip(0, 4.0))
     ).round(2)
     merged_df["hybrid_score"] = (
         merged_df["confidence_score"]
