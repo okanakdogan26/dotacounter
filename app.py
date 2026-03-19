@@ -17,71 +17,7 @@ REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
 DATA_DIR = Path(__file__).parent / "data"
 DOTABUFF_DATASET_PATH = DATA_DIR / "dotabuff_worst_versus.json"
-ALLY_SYNERGY_MAP = {
-    "Faceless Void": {
-        "Dark Seer": 8.5,
-        "Jakiro": 8.0,
-        "Invoker": 7.8,
-        "Phoenix": 7.6,
-        "Shadow Fiend": 7.4,
-        "Snapfire": 7.0,
-        "Skywrath Mage": 6.6,
-        "Witch Doctor": 6.5,
-        "Ancient Apparition": 6.3,
-        "Lina": 6.1,
-        "Disruptor": 5.9,
-        "Leshrac": 5.7,
-        "Death Prophet": 5.5,
-        "Ringmaster": 5.2,
-    },
-    "Magnus": {
-        "Dark Seer": 7.8,
-        "Phoenix": 7.4,
-        "Jakiro": 6.8,
-        "Shadow Fiend": 6.7,
-        "Earthshaker": 6.5,
-        "Invoker": 6.3,
-        "Lina": 6.1,
-        "Snapfire": 5.9,
-        "Leshrac": 5.6,
-        "Disruptor": 5.3,
-    },
-    "Enigma": {
-        "Phoenix": 7.6,
-        "Jakiro": 7.2,
-        "Snapfire": 6.8,
-        "Invoker": 6.7,
-        "Shadow Fiend": 6.4,
-        "Lina": 6.2,
-        "Leshrac": 5.8,
-        "Disruptor": 5.6,
-        "Ringmaster": 5.4,
-        "Death Prophet": 5.2,
-    },
-    "Mars": {
-        "Phoenix": 8.2,
-        "Snapfire": 7.8,
-        "Invoker": 7.0,
-        "Jakiro": 6.6,
-        "Skywrath Mage": 6.3,
-        "Dark Seer": 6.2,
-        "Lina": 5.9,
-        "Leshrac": 5.8,
-        "Shadow Demon": 5.6,
-        "Disruptor": 5.4,
-        "Ringmaster": 5.2,
-    },
-}
-ROLE_SYNERGY_WEIGHTS = {
-    "Carry": {"Support": 1.2, "Disabler": 1.0, "Initiator": 0.8, "Durable": 0.4},
-    "Support": {"Carry": 1.2, "Initiator": 0.9, "Durable": 0.5, "Pusher": 0.4},
-    "Disabler": {"Nuker": 1.4, "Carry": 1.0, "Support": 0.5, "Pusher": 0.3},
-    "Initiator": {"Nuker": 1.6, "Disabler": 1.1, "Carry": 0.8, "Support": 0.4},
-    "Nuker": {"Disabler": 0.9, "Initiator": 0.8, "Carry": 0.4},
-    "Durable": {"Nuker": 0.8, "Disabler": 0.8, "Support": 0.4},
-    "Escape": {"Support": 0.6, "Disabler": 0.5},
-    "Pusher": {"Durable": 0.6, "Support": 0.5, "Initiator": 0.4},
-}
+SYNERGY_CONFIG_PATH = DATA_DIR / "synergy_map.json"
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -135,6 +71,21 @@ def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> 
         f"{STEAM_HERO_IMAGE_BASE_URL}/"
         f"{normalized_image_path.rsplit('/', 1)[-1].replace('.full.png', '.png')}"
     )
+
+
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def load_synergy_config() -> dict:
+    """Load local synergy presets and role weights."""
+    if not SYNERGY_CONFIG_PATH.exists():
+        return {"ally_synergy_map": {}, "role_synergy_weights": {}}
+
+    with SYNERGY_CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+        payload = json.load(config_file)
+    if not isinstance(payload, dict):
+        raise ValueError("Synergy config must be a JSON object.")
+    payload.setdefault("ally_synergy_map", {})
+    payload.setdefault("role_synergy_weights", {})
+    return payload
 
 
 def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFrame) -> None:
@@ -571,6 +522,9 @@ def get_ally_synergy_scores(hero_df: pd.DataFrame, ally_hero_names: Iterable[str
     if not ally_hero_names:
         return {}
 
+    synergy_config = load_synergy_config()
+    ally_synergy_map = synergy_config.get("ally_synergy_map", {})
+    role_synergy_weights = synergy_config.get("role_synergy_weights", {})
     hero_roles_lookup = hero_df.set_index("localized_name")["roles"].to_dict()
     candidate_names = hero_df["localized_name"].dropna().tolist()
     combined_scores: dict[str, float] = {}
@@ -585,7 +539,7 @@ def get_ally_synergy_scores(hero_df: pd.DataFrame, ally_hero_names: Iterable[str
             candidate_roles = hero_roles_lookup.get(candidate_name, [])
             inferred_score = 0.0
             for ally_role in ally_roles:
-                role_weights = ROLE_SYNERGY_WEIGHTS.get(ally_role, {})
+                role_weights = role_synergy_weights.get(ally_role, {})
                 for candidate_role in candidate_roles:
                     inferred_score += role_weights.get(candidate_role, 0.0)
 
@@ -595,7 +549,7 @@ def get_ally_synergy_scores(hero_df: pd.DataFrame, ally_hero_names: Iterable[str
                     inferred_score, 3.5
                 )
 
-        for synergy_hero, score in ALLY_SYNERGY_MAP.get(hero_name, {}).items():
+        for synergy_hero, score in ally_synergy_map.get(hero_name, {}).items():
             combined_scores[synergy_hero] = combined_scores.get(synergy_hero, 0.0) + score
 
     return combined_scores
