@@ -138,7 +138,7 @@ def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> 
 
 
 def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFrame) -> None:
-    """Render selected enemy heroes as a compact image grid."""
+    """Render selected enemy heroes as a polished compact grid."""
     selected_df = hero_df[hero_df["localized_name"].isin(selected_hero_names)].copy()
     if selected_df.empty:
         return
@@ -146,27 +146,30 @@ def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFr
     selected_df["image_url"] = selected_df.apply(
         lambda row: get_hero_image_url(row["img"], row.get("name")), axis=1
     )
-    columns = st.columns(min(5, len(selected_df)))
+    columns = st.columns(5)
     for index, (_, hero_row) in enumerate(selected_df.iterrows()):
         with columns[index % len(columns)]:
-            if hero_row["image_url"]:
-                st.image(hero_row["image_url"], width=140)
-            st.markdown(f"**{hero_row['localized_name']}**")
+            st.markdown(
+                f"""
+                <div class="enemy-hero-card">
+                    <img src="{hero_row["image_url"]}" alt="{hero_row["localized_name"]}" class="enemy-hero-image" />
+                    <div class="enemy-hero-name">{hero_row["localized_name"]}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def render_counter_cards(results_df: pd.DataFrame) -> None:
-    """Render top counter heroes as visual cards."""
-    top_results = results_df.head(6)
+    """Render top counter heroes as polished visual cards."""
+    top_results = results_df.head(5)
     if top_results.empty:
         return
 
     st.subheader("Top Counter Picks")
-    columns = st.columns(4)
+    columns = st.columns(5)
     for index, (_, hero_row) in enumerate(top_results.iterrows()):
-        with columns[index % 4]:
-            if hero_row.get("image_url"):
-                st.image(hero_row["image_url"], width=180)
-            st.markdown(f"**{hero_row['localized_name']}**")
+        with columns[index % 5]:
             has_opendota_data = int(hero_row["games_played"]) > 0
             win_rate_text = (
                 f"%{hero_row['win_rate']:.2f}"
@@ -174,24 +177,185 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
                 else "N/A (Dotabuff-only)"
             )
             games_text = str(int(hero_row["games_played"])) if has_opendota_data else "No OpenDota data"
-            synergy_text = (
-                f" | Synergy: {hero_row['synergy_score']:.1f}"
+            synergy_badge = (
+                f'<span class="counter-card-pill synergy">Synergy {hero_row["synergy_score"]:.1f}</span>'
                 if float(hero_row.get("synergy_score", 0.0)) > 0
                 else ""
             )
-            st.caption(
-                f"Hybrid Score: {hero_row['hybrid_score']:.2f} | "
-                f"Win Rate: {win_rate_text} | "
-                f"Matches: {games_text}"
-                f"{synergy_text}"
+            card_html = (
+                '<div class="counter-card">'
+                '<div class="counter-card-topline">'
+                f'<span class="counter-card-pill primary">Hybrid {hero_row["hybrid_score"]:.2f}</span>'
+                f"{synergy_badge}"
+                "</div>"
+                f'<img src="{hero_row["image_url"]}" alt="{hero_row["localized_name"]}" class="counter-card-image" />'
+                f'<div class="counter-card-name">{hero_row["localized_name"]}</div>'
+                f'<div class="counter-card-meta">Win Rate: {win_rate_text}</div>'
+                f'<div class="counter-card-meta">Matches: {games_text}</div>'
+                "</div>"
+            )
+            st.markdown(
+                card_html,
+                unsafe_allow_html=True,
             )
 
 
-def inject_enemy_selection_css() -> None:
-    """Style the enemy selection panel."""
+def inject_app_theme() -> None:
+    """Inject the app-wide visual theme."""
     st.markdown(
         """
         <style>
+        :root {
+            --bg-main: #f4f1e8;
+            --bg-panel: rgba(255, 255, 255, 0.76);
+            --border-soft: rgba(44, 56, 72, 0.12);
+            --text-main: #232a36;
+            --text-muted: #6f7888;
+            --accent-gold: #cf8b17;
+            --accent-teal: #0f8b8d;
+            --shadow-soft: 0 18px 40px rgba(31, 38, 49, 0.08);
+        }
+        .stApp {
+            background:
+                radial-gradient(circle at top left, rgba(207, 139, 23, 0.14), transparent 28%),
+                radial-gradient(circle at top right, rgba(15, 139, 141, 0.12), transparent 24%),
+                linear-gradient(180deg, #f6f2e9 0%, #ede8dc 100%);
+            color: var(--text-main);
+        }
+        .block-container {
+            padding-top: 2.2rem;
+            padding-bottom: 3rem;
+        }
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, rgba(251, 249, 244, 0.96), rgba(240, 236, 226, 0.96));
+            border-right: 1px solid rgba(44, 56, 72, 0.08);
+        }
+        div[data-baseweb="select"] > div {
+            background: rgba(255,255,255,0.82);
+            border: 1px solid rgba(44, 56, 72, 0.12);
+            border-radius: 16px;
+            box-shadow: none;
+        }
+        div[data-baseweb="tag"] {
+            background: linear-gradient(135deg, #c75b4b, #dd7d5d);
+            border-radius: 999px;
+        }
+        div[data-baseweb="tag"] span {
+            color: white !important;
+            font-weight: 700;
+        }
+        .summary-strip {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.9rem;
+            margin: 1rem 0 1.4rem;
+        }
+        .summary-card {
+            background: var(--bg-panel);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            padding: 1rem 1rem 0.95rem;
+            box-shadow: var(--shadow-soft);
+        }
+        .summary-label {
+            color: var(--text-muted);
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.45rem;
+            font-weight: 700;
+        }
+        .summary-value {
+            color: var(--text-main);
+            font-size: 1.15rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+        .summary-subtle {
+            color: var(--text-muted);
+            font-size: 0.86rem;
+            margin-top: 0.25rem;
+        }
+        .enemy-hero-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-soft);
+            border-radius: 16px;
+            padding: 0.55rem;
+            box-shadow: var(--shadow-soft);
+            text-align: center;
+            margin-bottom: 0.45rem;
+        }
+        .enemy-hero-image {
+            width: 100%;
+            border-radius: 12px;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .enemy-hero-name {
+            color: var(--text-main);
+            font-weight: 800;
+            font-size: 0.88rem;
+            letter-spacing: -0.01em;
+            line-height: 1.2;
+        }
+        .counter-card {
+            background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(250,247,241,0.9));
+            border: 1px solid var(--border-soft);
+            border-radius: 16px;
+            padding: 0.55rem;
+            box-shadow: var(--shadow-soft);
+            margin-bottom: 0.45rem;
+        }
+        .counter-card-topline {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-bottom: 0.45rem;
+        }
+        .counter-card-pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.22rem 0.5rem;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+        }
+        .counter-card-pill.primary {
+            background: rgba(207, 139, 23, 0.14);
+            color: #8a5a09;
+        }
+        .counter-card-pill.synergy {
+            background: rgba(15, 139, 141, 0.12);
+            color: #0b6f70;
+        }
+        .counter-card-image {
+            width: 100%;
+            border-radius: 12px;
+            display: block;
+            margin-bottom: 0.45rem;
+        }
+        .counter-card-name {
+            color: var(--text-main);
+            font-size: 0.9rem;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            margin-bottom: 0.2rem;
+            line-height: 1.2;
+        }
+        .counter-card-meta {
+            color: var(--text-muted);
+            font-size: 0.76rem;
+            line-height: 1.35;
+        }
+        h1, h2, h3 {
+            color: var(--text-main);
+            letter-spacing: -0.03em;
+        }
+        div[data-testid="stCaptionContainer"] {
+            color: var(--text-muted);
+        }
         .enemy-draft-shell {
             background: linear-gradient(180deg, #171c24 0%, #11161d 100%);
             border: 1px solid rgba(255, 184, 0, 0.18);
@@ -239,7 +403,51 @@ def inject_enemy_selection_css() -> None:
             letter-spacing: 0.08em;
             margin-bottom: 0.35rem;
         }
+        @media (max-width: 1100px) {
+            .summary-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_summary_strip(
+    selected_hero_names: list[str],
+    selected_role: str,
+    min_games_threshold: int,
+    show_synergy: bool,
+    ally_hero_names: list[str],
+) -> None:
+    """Render a compact status strip for the current filters."""
+    synergy_value = ", ".join(ally_hero_names) if show_synergy and ally_hero_names else "Disabled"
+    enemy_value = ", ".join(selected_hero_names) if selected_hero_names else "No enemies selected"
+    st.markdown(
+        f"""
+        <div class="summary-strip">
+            <div class="summary-card">
+                <div class="summary-label">Enemy Draft</div>
+                <div class="summary-value">{len(selected_hero_names)}/5 selected</div>
+                <div class="summary-subtle">{enemy_value}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Role Focus</div>
+                <div class="summary-value">{selected_role}</div>
+                <div class="summary-subtle">Filtering the recommendation pool</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Sample Threshold</div>
+                <div class="summary-value">{min_games_threshold} matches</div>
+                <div class="summary-subtle">Lower this if the pool becomes sparse</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Synergy Mode</div>
+                <div class="summary-value">{'Active' if show_synergy and ally_hero_names else 'Off'}</div>
+                <div class="summary-subtle">{synergy_value}</div>
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -680,6 +888,7 @@ def prepare_results_dataframe(
 
 def main() -> None:
     st.set_page_config(page_title="Dota 2 Counter Picker", page_icon=":crossed_swords:", layout="wide")
+    inject_app_theme()
     st.title("Dota 2 Counter Picker")
 
     try:
@@ -705,6 +914,13 @@ def main() -> None:
     )
 
     st.write("Choose an enemy lineup and review the best counter recommendations.")
+    render_summary_strip(
+        selected_hero_names,
+        selected_role,
+        min_games_threshold,
+        show_synergy,
+        ally_hero_names,
+    )
     if show_synergy and ally_hero_names:
         st.caption(f"Synergy mode: enabled for ally heroes {', '.join(ally_hero_names)}")
         st.caption("Synergy model: explicit combo presets + role-based fallback for every hero")
