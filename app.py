@@ -208,18 +208,41 @@ def inject_app_theme() -> None:
         :root {
             --bg-main: #f4f1e8;
             --bg-panel: rgba(255, 255, 255, 0.76);
+            --bg-panel-strong: rgba(255, 255, 255, 0.9);
+            --bg-select: rgba(255,255,255,0.82);
             --border-soft: rgba(44, 56, 72, 0.12);
             --text-main: #232a36;
             --text-muted: #6f7888;
             --accent-gold: #cf8b17;
             --accent-teal: #0f8b8d;
             --shadow-soft: 0 18px 40px rgba(31, 38, 49, 0.08);
-        }
-        .stApp {
-            background:
+            --app-bg:
                 radial-gradient(circle at top left, rgba(207, 139, 23, 0.14), transparent 28%),
                 radial-gradient(circle at top right, rgba(15, 139, 141, 0.12), transparent 24%),
                 linear-gradient(180deg, #f6f2e9 0%, #ede8dc 100%);
+            --sidebar-bg: linear-gradient(180deg, rgba(251, 249, 244, 0.96), rgba(240, 236, 226, 0.96));
+            --card-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(250,247,241,0.9));
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-main: #0f141b;
+                --bg-panel: rgba(22, 29, 39, 0.82);
+                --bg-panel-strong: rgba(26, 34, 46, 0.94);
+                --bg-select: rgba(24, 31, 42, 0.92);
+                --border-soft: rgba(171, 185, 204, 0.14);
+                --text-main: #edf2f7;
+                --text-muted: #9aa7bb;
+                --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.26);
+                --app-bg:
+                    radial-gradient(circle at top left, rgba(207, 139, 23, 0.12), transparent 28%),
+                    radial-gradient(circle at top right, rgba(15, 139, 141, 0.12), transparent 24%),
+                    linear-gradient(180deg, #111821 0%, #0b1118 100%);
+                --sidebar-bg: linear-gradient(180deg, rgba(16, 22, 31, 0.98), rgba(12, 18, 26, 0.98));
+                --card-bg: linear-gradient(180deg, rgba(26,34,46,0.94), rgba(18,24,33,0.92));
+            }
+        }
+        .stApp {
+            background: var(--app-bg);
             color: var(--text-main);
         }
         .block-container {
@@ -227,12 +250,12 @@ def inject_app_theme() -> None:
             padding-bottom: 3rem;
         }
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, rgba(251, 249, 244, 0.96), rgba(240, 236, 226, 0.96));
+            background: var(--sidebar-bg);
             border-right: 1px solid rgba(44, 56, 72, 0.08);
         }
         div[data-baseweb="select"] > div {
-            background: rgba(255,255,255,0.82);
-            border: 1px solid rgba(44, 56, 72, 0.12);
+            background: var(--bg-select);
+            border: 1px solid var(--border-soft);
             border-radius: 16px;
             box-shadow: none;
         }
@@ -251,7 +274,7 @@ def inject_app_theme() -> None:
             margin: 1rem 0 1.4rem;
         }
         .summary-card {
-            background: var(--bg-panel);
+            background: var(--bg-panel-strong);
             backdrop-filter: blur(10px);
             border: 1px solid var(--border-soft);
             border-radius: 18px;
@@ -300,7 +323,7 @@ def inject_app_theme() -> None:
             line-height: 1.2;
         }
         .counter-card {
-            background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(250,247,241,0.9));
+            background: var(--card-bg);
             border: 1px solid var(--border-soft);
             border-radius: 16px;
             padding: 0.55rem;
@@ -329,6 +352,16 @@ def inject_app_theme() -> None:
         .counter-card-pill.synergy {
             background: rgba(15, 139, 141, 0.12);
             color: #0b6f70;
+        }
+        @media (prefers-color-scheme: dark) {
+            .counter-card-pill.primary {
+                background: rgba(207, 139, 23, 0.2);
+                color: #ffd488;
+            }
+            .counter-card-pill.synergy {
+                background: rgba(15, 139, 141, 0.2);
+                color: #8de5e1;
+            }
         }
         .counter-card-image {
             width: 100%;
