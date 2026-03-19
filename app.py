@@ -17,6 +17,71 @@ REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
 DATA_DIR = Path(__file__).parent / "data"
 DOTABUFF_DATASET_PATH = DATA_DIR / "dotabuff_worst_versus.json"
+ALLY_SYNERGY_MAP = {
+    "Faceless Void": {
+        "Dark Seer": 8.5,
+        "Jakiro": 8.0,
+        "Invoker": 7.8,
+        "Phoenix": 7.6,
+        "Shadow Fiend": 7.4,
+        "Snapfire": 7.0,
+        "Skywrath Mage": 6.6,
+        "Witch Doctor": 6.5,
+        "Ancient Apparition": 6.3,
+        "Lina": 6.1,
+        "Disruptor": 5.9,
+        "Leshrac": 5.7,
+        "Death Prophet": 5.5,
+        "Ringmaster": 5.2,
+    },
+    "Magnus": {
+        "Dark Seer": 7.8,
+        "Phoenix": 7.4,
+        "Jakiro": 6.8,
+        "Shadow Fiend": 6.7,
+        "Earthshaker": 6.5,
+        "Invoker": 6.3,
+        "Lina": 6.1,
+        "Snapfire": 5.9,
+        "Leshrac": 5.6,
+        "Disruptor": 5.3,
+    },
+    "Enigma": {
+        "Phoenix": 7.6,
+        "Jakiro": 7.2,
+        "Snapfire": 6.8,
+        "Invoker": 6.7,
+        "Shadow Fiend": 6.4,
+        "Lina": 6.2,
+        "Leshrac": 5.8,
+        "Disruptor": 5.6,
+        "Ringmaster": 5.4,
+        "Death Prophet": 5.2,
+    },
+    "Mars": {
+        "Phoenix": 8.2,
+        "Snapfire": 7.8,
+        "Invoker": 7.0,
+        "Jakiro": 6.6,
+        "Skywrath Mage": 6.3,
+        "Dark Seer": 6.2,
+        "Lina": 5.9,
+        "Leshrac": 5.8,
+        "Shadow Demon": 5.6,
+        "Disruptor": 5.4,
+        "Ringmaster": 5.2,
+    },
+}
+ROLE_SYNERGY_WEIGHTS = {
+    "Carry": {"Support": 1.2, "Disabler": 1.0, "Initiator": 0.8, "Durable": 0.4},
+    "Support": {"Carry": 1.2, "Initiator": 0.9, "Durable": 0.5, "Pusher": 0.4},
+    "Disabler": {"Nuker": 1.4, "Carry": 1.0, "Support": 0.5, "Pusher": 0.3},
+    "Initiator": {"Nuker": 1.6, "Disabler": 1.1, "Carry": 0.8, "Support": 0.4},
+    "Nuker": {"Disabler": 0.9, "Initiator": 0.8, "Carry": 0.4},
+    "Durable": {"Nuker": 0.8, "Disabler": 0.8, "Support": 0.4},
+    "Escape": {"Support": 0.6, "Disabler": 0.5},
+    "Pusher": {"Durable": 0.6, "Support": 0.5, "Initiator": 0.4},
+}
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -109,10 +174,16 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
                 else "N/A (Dotabuff-only)"
             )
             games_text = str(int(hero_row["games_played"])) if has_opendota_data else "No OpenDota data"
+            synergy_text = (
+                f" | Synergy: {hero_row['synergy_score']:.1f}"
+                if float(hero_row.get("synergy_score", 0.0)) > 0
+                else ""
+            )
             st.caption(
                 f"Hybrid Score: {hero_row['hybrid_score']:.2f} | "
                 f"Win Rate: {win_rate_text} | "
                 f"Matches: {games_text}"
+                f"{synergy_text}"
             )
 
 
@@ -174,7 +245,42 @@ def inject_enemy_selection_css() -> None:
     )
 
 
-def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int]:
+def get_ally_synergy_scores(hero_df: pd.DataFrame, ally_hero_names: Iterable[str] | None) -> dict[str, float]:
+    """Return combined synergy scores using explicit combos plus role-based inference."""
+    if not ally_hero_names:
+        return {}
+
+    hero_roles_lookup = hero_df.set_index("localized_name")["roles"].to_dict()
+    candidate_names = hero_df["localized_name"].dropna().tolist()
+    combined_scores: dict[str, float] = {}
+
+    for hero_name in ally_hero_names:
+        ally_roles = hero_roles_lookup.get(hero_name, [])
+
+        for candidate_name in candidate_names:
+            if candidate_name == hero_name:
+                continue
+
+            candidate_roles = hero_roles_lookup.get(candidate_name, [])
+            inferred_score = 0.0
+            for ally_role in ally_roles:
+                role_weights = ROLE_SYNERGY_WEIGHTS.get(ally_role, {})
+                for candidate_role in candidate_roles:
+                    inferred_score += role_weights.get(candidate_role, 0.0)
+
+            # Keep inferred synergy broad but weaker than hand-tuned combos.
+            if inferred_score > 0:
+                combined_scores[candidate_name] = combined_scores.get(candidate_name, 0.0) + min(
+                    inferred_score, 3.5
+                )
+
+        for synergy_hero, score in ALLY_SYNERGY_MAP.get(hero_name, {}).items():
+            combined_scores[synergy_hero] = combined_scores.get(synergy_hero, 0.0) + score
+
+    return combined_scores
+
+
+def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int, bool, list[str]]:
     """Render sidebar controls and return current selections."""
     hero_names = hero_df["localized_name"].sort_values().tolist()
 
@@ -186,6 +292,20 @@ def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int]:
         help="Select up to 5 enemy heroes.",
     )
     selected_role = st.sidebar.selectbox("Role filter", ROLE_OPTIONS)
+    show_synergy = st.sidebar.checkbox(
+        "Show Synergy",
+        value=False,
+        help="Boost counter picks that also work especially well with selected ally heroes.",
+    )
+    ally_hero_names: list[str] = []
+    if show_synergy:
+        ally_options = [hero_name for hero_name in hero_names if hero_name not in selected_heroes]
+        ally_hero_names = st.sidebar.multiselect(
+            "Ally heroes",
+            options=ally_options,
+            max_selections=5,
+            help="For example, add Faceless Void to prioritize Chronosphere follow-up heroes.",
+        )
     min_games_threshold = st.sidebar.slider(
         "Minimum matches threshold",
         min_value=20,
@@ -194,7 +314,7 @@ def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int]:
         step=5,
         help="Only show counter picks with at least this many matches.",
     )
-    return selected_heroes, selected_role, min_games_threshold
+    return selected_heroes, selected_role, min_games_threshold, show_synergy, ally_hero_names
 
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
@@ -428,6 +548,8 @@ def prepare_results_dataframe(
     selected_role: str,
     selected_enemy_names: Iterable[str],
     dotabuff_signal_df: pd.DataFrame | None = None,
+    ally_hero_names: Iterable[str] | None = None,
+    show_synergy: bool = False,
 ) -> pd.DataFrame:
     """Convert explorer rows into a filtered, display-ready DataFrame."""
     results_df = pd.DataFrame(rows)
@@ -494,6 +616,8 @@ def prepare_results_dataframe(
         merged_df["dotabuff_enemy_hits"], errors="coerce"
     ).fillna(0).astype(int)
     merged_df["roles"] = merged_df["roles"].apply(lambda roles: roles if isinstance(roles, list) else [])
+    synergy_lookup = get_ally_synergy_scores(hero_df, ally_hero_names) if show_synergy else {}
+    merged_df["synergy_score"] = merged_df["localized_name"].map(synergy_lookup).fillna(0.0)
 
     selected_enemy_count = max(len(set(selected_enemy_names)), 1)
     merged_df["sample_factor"] = (merged_df["games_played"] / (merged_df["games_played"] + 75.0)).clip(0, 1)
@@ -524,9 +648,11 @@ def prepare_results_dataframe(
         + (merged_df["dotabuff_disadvantage"] * 1.5)
         + (merged_df["dotabuff_enemy_hits"] * 3.0)
         + ((merged_df["dotabuff_matches"] / 10000.0).clip(0, 3.0))
+        + merged_df["synergy_score"]
     ).round(2)
     merged_df = merged_df.sort_values(
-        ["hybrid_score", "confidence_score", "games_played"], ascending=[False, False, False]
+        ["hybrid_score", "synergy_score", "confidence_score", "games_played"],
+        ascending=[False, False, False, False],
     )
 
     return merged_df.loc[
@@ -545,6 +671,7 @@ def prepare_results_dataframe(
             "dotabuff_disadvantage",
             "dotabuff_matches",
             "dotabuff_enemy_hits",
+            "synergy_score",
             "hybrid_score",
             "roles",
         ],
@@ -562,7 +689,13 @@ def main() -> None:
         st.error(f"Failed to load hero list: {exc}")
         return
 
-    selected_hero_names, selected_role, min_games_threshold = render_sidebar(hero_df)
+    (
+        selected_hero_names,
+        selected_role,
+        min_games_threshold,
+        show_synergy,
+        ally_hero_names,
+    ) = render_sidebar(hero_df)
     hero_name_to_id = hero_df.set_index("localized_name")["id"].to_dict()
     selected_enemy_ids = tuple(hero_name_to_id[name] for name in selected_hero_names)
 
@@ -572,6 +705,9 @@ def main() -> None:
     )
 
     st.write("Choose an enemy lineup and review the best counter recommendations.")
+    if show_synergy and ally_hero_names:
+        st.caption(f"Synergy mode: enabled for ally heroes {', '.join(ally_hero_names)}")
+        st.caption("Synergy model: explicit combo presets + role-based fallback for every hero")
 
     if not selected_enemy_ids:
         st.info("Select at least one enemy hero from the sidebar to continue.")
@@ -600,7 +736,13 @@ def main() -> None:
     data_source_label = "OpenDota Explorer"
     if rows:
         results_df = prepare_results_dataframe(
-            rows, hero_df, selected_role, selected_hero_names, dotabuff_signal_df
+            rows,
+            hero_df,
+            selected_role,
+            selected_hero_names,
+            dotabuff_signal_df,
+            ally_hero_names=ally_hero_names,
+            show_synergy=show_synergy,
         )
     else:
         try:
@@ -622,6 +764,8 @@ def main() -> None:
             selected_role,
             selected_hero_names,
             dotabuff_signal_df,
+            ally_hero_names=ally_hero_names,
+            show_synergy=show_synergy,
         )
 
     if results_df.empty:
@@ -634,6 +778,8 @@ def main() -> None:
     st.caption(f"Data source: {data_source_label}")
     st.caption(f"Dotabuff status: {dotabuff_status}")
     st.caption("Ranking logic: OpenDota confidence score + local Dotabuff worst-versus signal")
+    if show_synergy and ally_hero_names:
+        st.caption("Synergy weighting: ally combo heroes receive an additional score bonus")
     render_counter_cards(results_df)
 
     display_df = results_df.copy()
@@ -653,6 +799,7 @@ def main() -> None:
             "dotabuff_disadvantage": "Dotabuff Disadvantage (%)",
             "dotabuff_matches": "Dotabuff Matches",
             "dotabuff_enemy_hits": "Dotabuff Enemy Hits",
+            "synergy_score": "Synergy Score",
             "hybrid_score": "Hybrid Score",
             "roles": "Roles",
         }
