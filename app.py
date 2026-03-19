@@ -576,21 +576,13 @@ def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int, bool, li
     )
     ally_hero_names: list[str] = []
     if show_synergy:
-        current_allies = st.session_state.get("selected_ally_heroes", [])
-        ally_options = [
-            hero_name
-            for hero_name in hero_names
-            if hero_name not in selected_heroes or hero_name in current_allies
-        ]
         ally_hero_names = st.sidebar.multiselect(
             "Ally heroes",
-            options=ally_options,
+            options=hero_names,
             max_selections=5,
             help="For example, add Faceless Void to prioritize Chronosphere follow-up heroes.",
             key="selected_ally_heroes",
         )
-        ally_hero_names = [hero_name for hero_name in ally_hero_names if hero_name not in selected_heroes]
-        st.session_state["selected_ally_heroes"] = ally_hero_names
     min_games_threshold = st.sidebar.slider(
         "Minimum matches threshold",
         min_value=20,
@@ -985,6 +977,7 @@ def main() -> None:
         show_synergy,
         ally_hero_names,
     ) = render_sidebar(hero_df)
+    effective_ally_hero_names = [hero_name for hero_name in ally_hero_names if hero_name not in selected_hero_names]
     hero_name_to_id = hero_df.set_index("localized_name")["id"].to_dict()
     selected_enemy_ids = tuple(hero_name_to_id[name] for name in selected_hero_names)
 
@@ -999,11 +992,16 @@ def main() -> None:
         selected_role,
         min_games_threshold,
         show_synergy,
-        ally_hero_names,
+        effective_ally_hero_names,
     )
-    if show_synergy and ally_hero_names:
-        st.caption(f"Synergy mode: enabled for ally heroes {', '.join(ally_hero_names)}")
+    if show_synergy and effective_ally_hero_names:
+        st.caption(f"Synergy mode: enabled for ally heroes {', '.join(effective_ally_hero_names)}")
         st.caption("Synergy model: explicit combo presets + role-based fallback for every hero")
+    if show_synergy and set(ally_hero_names).intersection(selected_hero_names):
+        overlapping_heroes = sorted(set(ally_hero_names).intersection(selected_hero_names))
+        st.caption(
+            f"Ignoring overlapping ally/enemy heroes for synergy: {', '.join(overlapping_heroes)}"
+        )
 
     if not selected_enemy_ids:
         st.info("Select at least one enemy hero from the sidebar to continue.")
@@ -1037,7 +1035,7 @@ def main() -> None:
             selected_role,
             selected_hero_names,
             dotabuff_signal_df,
-            ally_hero_names=ally_hero_names,
+            ally_hero_names=effective_ally_hero_names,
             show_synergy=show_synergy,
         )
     else:
@@ -1060,7 +1058,7 @@ def main() -> None:
             selected_role,
             selected_hero_names,
             dotabuff_signal_df,
-            ally_hero_names=ally_hero_names,
+            ally_hero_names=effective_ally_hero_names,
             show_synergy=show_synergy,
         )
 
@@ -1074,7 +1072,7 @@ def main() -> None:
     st.caption(f"Data source: {data_source_label}")
     st.caption(f"Dotabuff status: {dotabuff_status}")
     st.caption("Ranking logic: OpenDota confidence score + local Dotabuff worst-versus signal")
-    if show_synergy and ally_hero_names:
+    if show_synergy and effective_ally_hero_names:
         st.caption("Synergy weighting: ally combo heroes receive an additional score bonus")
     render_counter_cards(results_df)
 
