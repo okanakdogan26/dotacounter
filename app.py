@@ -146,18 +146,16 @@ def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFr
     selected_df["image_url"] = selected_df.apply(
         lambda row: get_hero_image_url(row["img"], row.get("name")), axis=1
     )
-    columns = st.columns(5)
-    for index, (_, hero_row) in enumerate(selected_df.iterrows()):
-        with columns[index % len(columns)]:
-            st.markdown(
-                f"""
-                <div class="enemy-hero-card">
-                    <img src="{hero_row["image_url"]}" alt="{hero_row["localized_name"]}" class="enemy-hero-image" />
-                    <div class="enemy-hero-name">{hero_row["localized_name"]}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    card_html = "".join(
+        (
+            '<div class="enemy-hero-card">'
+            f'<img src="{hero_row["image_url"]}" alt="{hero_row["localized_name"]}" class="enemy-hero-image" />'
+            f'<div class="enemy-hero-name">{hero_row["localized_name"]}</div>'
+            "</div>"
+        )
+        for _, hero_row in selected_df.iterrows()
+    )
+    st.markdown(f'<div class="enemy-heroes-grid">{card_html}</div>', unsafe_allow_html=True)
 
 
 def render_counter_cards(results_df: pd.DataFrame) -> None:
@@ -167,37 +165,33 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
         return
 
     st.subheader("Top Counter Picks")
-    columns = st.columns(5)
-    for index, (_, hero_row) in enumerate(top_results.iterrows()):
-        with columns[index % 5]:
-            has_opendota_data = int(hero_row["games_played"]) > 0
-            win_rate_text = (
-                f"%{hero_row['win_rate']:.2f}"
-                if has_opendota_data
-                else "N/A (Dotabuff-only)"
-            )
-            games_text = str(int(hero_row["games_played"])) if has_opendota_data else "No OpenDota data"
-            synergy_badge = (
-                f'<span class="counter-card-pill synergy">Synergy {hero_row["synergy_score"]:.1f}</span>'
-                if float(hero_row.get("synergy_score", 0.0)) > 0
-                else ""
-            )
-            card_html = (
-                '<div class="counter-card">'
-                '<div class="counter-card-topline">'
-                f'<span class="counter-card-pill primary">Hybrid {hero_row["hybrid_score"]:.2f}</span>'
-                f"{synergy_badge}"
-                "</div>"
-                f'<img src="{hero_row["image_url"]}" alt="{hero_row["localized_name"]}" class="counter-card-image" />'
-                f'<div class="counter-card-name">{hero_row["localized_name"]}</div>'
-                f'<div class="counter-card-meta">Win Rate: {win_rate_text}</div>'
-                f'<div class="counter-card-meta">Matches: {games_text}</div>'
-                "</div>"
-            )
-            st.markdown(
-                card_html,
-                unsafe_allow_html=True,
-            )
+    cards: list[str] = []
+    for _, hero_row in top_results.iterrows():
+        has_opendota_data = int(hero_row["games_played"]) > 0
+        win_rate_text = (
+            f"%{hero_row['win_rate']:.2f}"
+            if has_opendota_data
+            else "N/A (Dotabuff-only)"
+        )
+        games_text = str(int(hero_row["games_played"])) if has_opendota_data else "No OpenDota data"
+        synergy_badge = (
+            f'<span class="counter-card-pill synergy">Synergy {hero_row["synergy_score"]:.1f}</span>'
+            if float(hero_row.get("synergy_score", 0.0)) > 0
+            else ""
+        )
+        cards.append(
+            '<div class="counter-card">'
+            '<div class="counter-card-topline">'
+            f'<span class="counter-card-pill primary">Hybrid {hero_row["hybrid_score"]:.2f}</span>'
+            f"{synergy_badge}"
+            "</div>"
+            f'<img src="{hero_row["image_url"]}" alt="{hero_row["localized_name"]}" class="counter-card-image" />'
+            f'<div class="counter-card-name">{hero_row["localized_name"]}</div>'
+            f'<div class="counter-card-meta">Win Rate: {win_rate_text}</div>'
+            f'<div class="counter-card-meta">Matches: {games_text}</div>'
+            "</div>"
+        )
+    st.markdown(f'<div class="counter-cards-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
 def inject_app_theme() -> None:
@@ -266,6 +260,7 @@ def inject_app_theme() -> None:
         .block-container {
             padding-top: 2.2rem;
             padding-bottom: 3rem;
+            max-width: 1400px;
         }
         [data-testid="stSidebar"] {
             background: var(--sidebar-bg);
@@ -290,6 +285,12 @@ def inject_app_theme() -> None:
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 0.9rem;
             margin: 1rem 0 1.4rem;
+        }
+        .enemy-heroes-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.8rem;
+            margin-bottom: 0.8rem;
         }
         .summary-card {
             background: var(--bg-panel-strong);
@@ -347,6 +348,12 @@ def inject_app_theme() -> None:
             padding: 0.55rem;
             box-shadow: var(--shadow-soft);
             margin-bottom: 0.45rem;
+        }
+        .counter-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.8rem;
+            margin-bottom: 0.8rem;
         }
         .counter-card-topline {
             display: flex;
@@ -466,9 +473,52 @@ def inject_app_theme() -> None:
             letter-spacing: 0.08em;
             margin-bottom: 0.35rem;
         }
+        @media (max-width: 1200px) {
+            .enemy-heroes-grid,
+            .counter-cards-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
         @media (max-width: 1100px) {
             .summary-strip {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 820px) {
+            .block-container {
+                padding-top: 1.25rem;
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            h1 {
+                font-size: 2.2rem !important;
+            }
+            .summary-strip,
+            .enemy-heroes-grid,
+            .counter-cards-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.65rem;
+            }
+            .summary-card {
+                padding: 0.85rem 0.85rem 0.8rem;
+            }
+        }
+        @media (max-width: 560px) {
+            .summary-strip,
+            .enemy-heroes-grid,
+            .counter-cards-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .enemy-hero-card,
+            .counter-card {
+                padding: 0.5rem;
+            }
+            .enemy-hero-name,
+            .counter-card-name {
+                font-size: 0.84rem;
+            }
+            .counter-card-meta {
+                font-size: 0.72rem;
             }
         }
         </style>
