@@ -241,6 +241,24 @@ def inject_app_theme() -> None:
                 --card-bg: linear-gradient(180deg, rgba(26,34,46,0.94), rgba(18,24,33,0.92));
             }
         }
+        html[data-theme="dark"],
+        body[data-theme="dark"],
+        [data-theme="dark"] {
+            --bg-main: #0f141b;
+            --bg-panel: rgba(22, 29, 39, 0.82);
+            --bg-panel-strong: rgba(26, 34, 46, 0.94);
+            --bg-select: rgba(24, 31, 42, 0.92);
+            --border-soft: rgba(171, 185, 204, 0.14);
+            --text-main: #edf2f7;
+            --text-muted: #9aa7bb;
+            --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.26);
+            --app-bg:
+                radial-gradient(circle at top left, rgba(207, 139, 23, 0.12), transparent 28%),
+                radial-gradient(circle at top right, rgba(15, 139, 141, 0.12), transparent 24%),
+                linear-gradient(180deg, #111821 0%, #0b1118 100%);
+            --sidebar-bg: linear-gradient(180deg, rgba(16, 22, 31, 0.98), rgba(12, 18, 26, 0.98));
+            --card-bg: linear-gradient(180deg, rgba(26,34,46,0.94), rgba(18,24,33,0.92));
+        }
         .stApp {
             background: var(--app-bg);
             color: var(--text-main);
@@ -362,6 +380,18 @@ def inject_app_theme() -> None:
                 background: rgba(15, 139, 141, 0.2);
                 color: #8de5e1;
             }
+        }
+        html[data-theme="dark"] .counter-card-pill.primary,
+        body[data-theme="dark"] .counter-card-pill.primary,
+        [data-theme="dark"] .counter-card-pill.primary {
+            background: rgba(207, 139, 23, 0.2);
+            color: #ffd488;
+        }
+        html[data-theme="dark"] .counter-card-pill.synergy,
+        body[data-theme="dark"] .counter-card-pill.synergy,
+        [data-theme="dark"] .counter-card-pill.synergy {
+            background: rgba(15, 139, 141, 0.2);
+            color: #8de5e1;
         }
         .counter-card-image {
             width: 100%;
