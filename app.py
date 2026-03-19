@@ -881,6 +881,9 @@ def prepare_results_dataframe(
             dotabuff_only_df["avg_enemy_overlap"] = 0.0
             merged_df = pd.concat([merged_df, dotabuff_only_df], ignore_index=True, sort=False)
 
+    if enemy_name_set:
+        merged_df = merged_df[~merged_df["localized_name"].isin(enemy_name_set)]
+
     merged_df["dotabuff_disadvantage"] = pd.to_numeric(
         merged_df["dotabuff_disadvantage"], errors="coerce"
     ).fillna(0.0)
