@@ -26,9 +26,10 @@ REQUEST_HEADERS = {
 }
 
 
-def matches_role_filter(roles: list[str], selected_role: str) -> bool:
+def matches_role_filter(roles: list[str] | object, selected_role: str) -> bool:
     """Match UI roles against OpenDota roles and a few inferred lane heuristics."""
-    role_set = set(roles)
+    normalized_roles = roles if isinstance(roles, list) else []
+    role_set = set(normalized_roles)
 
     if selected_role == "All":
         return True
@@ -53,16 +54,22 @@ def matches_role_filter(roles: list[str], selected_role: str) -> bool:
 
 def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> str:
     """Convert OpenDota hero metadata into a full Steam CDN image URL."""
-    if not image_path:
-        if hero_name:
-            hero_slug = hero_name.removeprefix("npc_dota_hero_")
+    normalized_image_path = image_path if isinstance(image_path, str) else ""
+    normalized_hero_name = hero_name if isinstance(hero_name, str) else ""
+
+    if not normalized_image_path:
+        if normalized_hero_name:
+            hero_slug = normalized_hero_name.removeprefix("npc_dota_hero_")
             return f"{STEAM_HERO_IMAGE_BASE_URL}/{hero_slug}.png"
         return ""
-    if image_path.startswith("http://") or image_path.startswith("https://"):
-        return image_path
-    if image_path.startswith("/apps/dota2/images/dota_react/heroes/"):
-        return f"{STEAM_CDN_BASE_URL}{image_path}"
-    return f"{STEAM_HERO_IMAGE_BASE_URL}/{image_path.rsplit('/', 1)[-1].replace('.full.png', '.png')}"
+    if normalized_image_path.startswith("http://") or normalized_image_path.startswith("https://"):
+        return normalized_image_path
+    if normalized_image_path.startswith("/apps/dota2/images/dota_react/heroes/"):
+        return f"{STEAM_CDN_BASE_URL}{normalized_image_path}"
+    return (
+        f"{STEAM_HERO_IMAGE_BASE_URL}/"
+        f"{normalized_image_path.rsplit('/', 1)[-1].replace('.full.png', '.png')}"
+    )
 
 
 def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFrame) -> None:
@@ -107,6 +114,87 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
                 f"Win Rate: {win_rate_text} | "
                 f"Matches: {games_text}"
             )
+
+
+def inject_enemy_selection_css() -> None:
+    """Style the enemy selection panel."""
+    st.markdown(
+        """
+        <style>
+        .enemy-draft-shell {
+            background: linear-gradient(180deg, #171c24 0%, #11161d 100%);
+            border: 1px solid rgba(255, 184, 0, 0.18);
+            border-radius: 18px;
+            padding: 1rem 1.1rem 1.2rem;
+            margin: 0.8rem 0 1.2rem;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        }
+        .enemy-draft-title {
+            color: #f3f5f7;
+            font-size: 1.55rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            margin: 0;
+        }
+        .enemy-draft-subtitle {
+            color: #8ea0b5;
+            font-size: 0.86rem;
+            margin-top: 0.2rem;
+        }
+        .hero-selection-shell {
+            background: linear-gradient(180deg, #171c24 0%, #11161d 100%);
+            border: 1px solid rgba(64, 236, 217, 0.18);
+            border-radius: 18px;
+            padding: 1rem 1.1rem 1.2rem;
+            margin: 0.8rem 0 1.2rem;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        }
+        .panel-heading {
+            color: #f3f5f7;
+            font-size: 1.15rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            margin-bottom: 0.8rem;
+            text-transform: uppercase;
+        }
+        div[data-testid="stButton"] button[kind="secondary"],
+        div[data-testid="stButton"] button[kind="tertiary"] {
+            border-radius: 12px;
+        }
+        .slot-label {
+            color: #8ea0b5;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.35rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int]:
+    """Render sidebar controls and return current selections."""
+    hero_names = hero_df["localized_name"].sort_values().tolist()
+
+    st.sidebar.header("Filters")
+    selected_heroes = st.sidebar.multiselect(
+        "Enemy heroes",
+        options=hero_names,
+        max_selections=5,
+        help="Select up to 5 enemy heroes.",
+    )
+    selected_role = st.sidebar.selectbox("Role filter", ROLE_OPTIONS)
+    min_games_threshold = st.sidebar.slider(
+        "Minimum matches threshold",
+        min_value=20,
+        max_value=100,
+        value=DEFAULT_MIN_GAMES_THRESHOLD,
+        step=5,
+        help="Only show counter picks with at least this many matches.",
+    )
+    return selected_heroes, selected_role, min_games_threshold
 
 
 @st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
@@ -405,6 +493,7 @@ def prepare_results_dataframe(
     merged_df["dotabuff_enemy_hits"] = pd.to_numeric(
         merged_df["dotabuff_enemy_hits"], errors="coerce"
     ).fillna(0).astype(int)
+    merged_df["roles"] = merged_df["roles"].apply(lambda roles: roles if isinstance(roles, list) else [])
 
     selected_enemy_count = max(len(set(selected_enemy_names)), 1)
     merged_df["sample_factor"] = (merged_df["games_played"] / (merged_df["games_played"] + 75.0)).clip(0, 1)
@@ -460,29 +549,6 @@ def prepare_results_dataframe(
             "roles",
         ],
     ]
-
-
-def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int]:
-    """Render sidebar controls and return current selections."""
-    hero_names = hero_df["localized_name"].sort_values().tolist()
-
-    st.sidebar.header("Filters")
-    selected_heroes = st.sidebar.multiselect(
-        "Enemy heroes",
-        options=hero_names,
-        max_selections=5,
-        help="Select up to 5 enemy heroes.",
-    )
-    selected_role = st.sidebar.selectbox("Role filter", ROLE_OPTIONS)
-    min_games_threshold = st.sidebar.slider(
-        "Minimum matches threshold",
-        min_value=20,
-        max_value=100,
-        value=DEFAULT_MIN_GAMES_THRESHOLD,
-        step=5,
-        help="Only show counter picks with at least this many matches.",
-    )
-    return selected_heroes, selected_role, min_games_threshold
 
 
 def main() -> None:
