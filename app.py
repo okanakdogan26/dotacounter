@@ -12,7 +12,7 @@ import streamlit as st
 API_BASE_URL = "https://api.opendota.com/api"
 STEAM_CDN_BASE_URL = "https://cdn.cloudflare.steamstatic.com"
 STEAM_HERO_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/heroes"
-ROLE_OPTIONS = ["Hepsi", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
+ROLE_OPTIONS = ["All", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
 DATA_DIR = Path(__file__).parent / "data"
@@ -30,7 +30,7 @@ def matches_role_filter(roles: list[str], selected_role: str) -> bool:
     """Match UI roles against OpenDota roles and a few inferred lane heuristics."""
     role_set = set(roles)
 
-    if selected_role == "Hepsi":
+    if selected_role == "All":
         return True
     if selected_role in {"Carry", "Support", "Disabler", "Durable"}:
         return selected_role in role_set
@@ -88,7 +88,7 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
     if top_results.empty:
         return
 
-    st.subheader("One Cikan Counterlar")
+    st.subheader("Top Counter Picks")
     columns = st.columns(4)
     for index, (_, hero_row) in enumerate(top_results.iterrows()):
         with columns[index % 4]:
@@ -101,11 +101,11 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
                 if has_opendota_data
                 else "N/A (Dotabuff-only)"
             )
-            games_text = str(int(hero_row["games_played"])) if has_opendota_data else "OpenDota veri yok"
+            games_text = str(int(hero_row["games_played"])) if has_opendota_data else "No OpenDota data"
             st.caption(
-                f"Hibrit Skor: {hero_row['hybrid_score']:.2f} | "
+                f"Hybrid Score: {hero_row['hybrid_score']:.2f} | "
                 f"Win Rate: {win_rate_text} | "
-                f"Mac: {games_text}"
+                f"Matches: {games_text}"
             )
 
 
@@ -359,7 +359,7 @@ def prepare_results_dataframe(
     if enemy_name_set:
         merged_df = merged_df[~merged_df["localized_name"].isin(enemy_name_set)]
 
-    if selected_role != "Hepsi":
+    if selected_role != "All":
         merged_df = merged_df[merged_df["roles"].apply(lambda roles: matches_role_filter(roles, selected_role))]
 
     if merged_df.empty:
@@ -466,21 +466,21 @@ def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int]:
     """Render sidebar controls and return current selections."""
     hero_names = hero_df["localized_name"].sort_values().tolist()
 
-    st.sidebar.header("Filtreler")
+    st.sidebar.header("Filters")
     selected_heroes = st.sidebar.multiselect(
-        "Rakip herolar",
+        "Enemy heroes",
         options=hero_names,
         max_selections=5,
-        help="En fazla 5 rakip hero secin.",
+        help="Select up to 5 enemy heroes.",
     )
-    selected_role = st.sidebar.selectbox("Rol filtresi", ROLE_OPTIONS)
+    selected_role = st.sidebar.selectbox("Role filter", ROLE_OPTIONS)
     min_games_threshold = st.sidebar.slider(
-        "Mac sayisi esigi",
+        "Minimum matches threshold",
         min_value=20,
         max_value=100,
         value=DEFAULT_MIN_GAMES_THRESHOLD,
         step=5,
-        help="Sadece bu esik ve uzerindeki mac sayisina sahip counter onerileri gosterilir.",
+        help="Only show counter picks with at least this many matches.",
     )
     return selected_heroes, selected_role, min_games_threshold
 
@@ -493,7 +493,7 @@ def main() -> None:
         heroes = fetch_heroes()
         hero_df = build_hero_dataframe(heroes)
     except (requests.RequestException, ValueError) as exc:
-        st.error(f"Hero listesi alinamadi: {exc}")
+        st.error(f"Failed to load hero list: {exc}")
         return
 
     selected_hero_names, selected_role, min_games_threshold = render_sidebar(hero_df)
@@ -501,34 +501,34 @@ def main() -> None:
     selected_enemy_ids = tuple(hero_name_to_id[name] for name in selected_hero_names)
 
     st.caption(
-        f"OpenDota verileri ile son 30 gunde secili rakiplere karsi en iyi kahramanlari bulun. "
-        f"Su anki minimum orneklem esigi: {min_games_threshold} mac."
+        f"Find the best hero counters against the selected enemies using OpenDota data from the last 30 days. "
+        f"Current minimum sample threshold: {min_games_threshold} matches."
     )
 
-    st.write("Rakip takimi secip uygun counter onerilerini inceleyin.")
+    st.write("Choose an enemy lineup and review the best counter recommendations.")
 
     if not selected_enemy_ids:
-        st.info("Devam etmek icin kenar cubugundan en az bir rakip hero secin.")
+        st.info("Select at least one enemy hero from the sidebar to continue.")
         return
 
-    st.subheader("Secili Rakipler")
+    st.subheader("Selected Enemies")
     render_selected_hero_grid(selected_hero_names, hero_df)
 
     try:
         rows = fetch_counter_rows(selected_enemy_ids, min_games_threshold)
     except requests.RequestException as exc:
-        st.error(f"OpenDota Explorer API baglantisinda hata olustu: {exc}")
+        st.error(f"OpenDota Explorer API request failed: {exc}")
         return
     except ValueError as exc:
-        st.error(f"Explorer verisi islenemedi: {exc}")
+        st.error(f"Failed to process Explorer data: {exc}")
         return
 
     dotabuff_signal_df = build_dotabuff_signal_dataframe(selected_hero_names)
     dotabuff_dataset = load_dotabuff_dataset()
     dotabuff_status = (
-        f"yerel dataset aktif (guncelleme: {dotabuff_dataset.get('updated_at', 'bilinmiyor')})"
+        f"local dataset active (updated: {dotabuff_dataset.get('updated_at', 'unknown')})"
         if not dotabuff_signal_df.empty
-        else "yerel dataset bagli, secili hero icin kayit yok"
+        else "local dataset loaded, but no entries exist for the selected heroes"
     )
 
     data_source_label = "OpenDota Explorer"
@@ -540,12 +540,12 @@ def main() -> None:
         try:
             fallback_rows_df = build_fallback_matchup_dataframe(selected_enemy_ids, min_games_threshold)
         except (requests.RequestException, ValueError) as exc:
-            st.error(f"OpenDota matchup verisi alinamadi: {exc}")
+            st.error(f"Failed to load OpenDota matchup data: {exc}")
             return
 
         if fallback_rows_df.empty:
             st.warning(
-                "Secili rakipler icin yeterli veri bulunamadi. Esigi dusurup tekrar deneyin."
+                "Not enough data was found for the selected enemies. Lower the threshold and try again."
             )
             return
 
@@ -560,14 +560,14 @@ def main() -> None:
 
     if results_df.empty:
         st.warning(
-            "Secilen rol icin yeterli veri bulunamadi. Farkli bir rol, hero kombinasyonu "
-            "veya daha dusuk mac esigi deneyin."
+            "Not enough data was found for the selected role. Try a different role, enemy combination, "
+            "or a lower match threshold."
         )
         return
 
-    st.caption(f"Veri kaynagi: {data_source_label}")
-    st.caption(f"Dotabuff durumu: {dotabuff_status}")
-    st.caption("Siralama mantigi: OpenDota confidence score + yerel Dotabuff worst-versus sinyali")
+    st.caption(f"Data source: {data_source_label}")
+    st.caption(f"Dotabuff status: {dotabuff_status}")
+    st.caption("Ranking logic: OpenDota confidence score + local Dotabuff worst-versus signal")
     render_counter_cards(results_df)
 
     display_df = results_df.copy()
@@ -592,18 +592,18 @@ def main() -> None:
         }
     )
 
-    st.subheader("Counter Sonuclari")
+    st.subheader("Counter Results")
     st.dataframe(
         display_df,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Image": st.column_config.ImageColumn("Image", help="Hero resmi", width="medium"),
+            "Image": st.column_config.ImageColumn("Image", help="Hero portrait", width="medium"),
         },
     )
 
     chart_df = results_df.loc[:, ["localized_name", "win_rate"]].set_index("localized_name")
-    st.subheader("Win Rate Grafigi")
+    st.subheader("Win Rate Chart")
     st.bar_chart(chart_df)
 
 
