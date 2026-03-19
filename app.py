@@ -565,22 +565,32 @@ def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int, bool, li
         options=hero_names,
         max_selections=5,
         help="Select up to 5 enemy heroes.",
+        key="selected_enemy_heroes",
     )
     selected_role = st.sidebar.selectbox("Role filter", ROLE_OPTIONS)
     show_synergy = st.sidebar.checkbox(
         "Show Synergy",
         value=False,
         help="Boost counter picks that also work especially well with selected ally heroes.",
+        key="show_synergy_enabled",
     )
     ally_hero_names: list[str] = []
     if show_synergy:
-        ally_options = [hero_name for hero_name in hero_names if hero_name not in selected_heroes]
+        current_allies = st.session_state.get("selected_ally_heroes", [])
+        ally_options = [
+            hero_name
+            for hero_name in hero_names
+            if hero_name not in selected_heroes or hero_name in current_allies
+        ]
         ally_hero_names = st.sidebar.multiselect(
             "Ally heroes",
             options=ally_options,
             max_selections=5,
             help="For example, add Faceless Void to prioritize Chronosphere follow-up heroes.",
+            key="selected_ally_heroes",
         )
+        ally_hero_names = [hero_name for hero_name in ally_hero_names if hero_name not in selected_heroes]
+        st.session_state["selected_ally_heroes"] = ally_hero_names
     min_games_threshold = st.sidebar.slider(
         "Minimum matches threshold",
         min_value=20,
