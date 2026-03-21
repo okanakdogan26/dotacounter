@@ -886,6 +886,9 @@ def prepare_results_dataframe(
     if enemy_name_set:
         merged_df = merged_df[~merged_df["localized_name"].isin(enemy_name_set)]
 
+    if selected_role != "All":
+        merged_df = merged_df[merged_df["roles"].apply(lambda roles: matches_role_filter(roles, selected_role))]
+
     merged_df["dotabuff_disadvantage"] = pd.to_numeric(
         merged_df["dotabuff_disadvantage"], errors="coerce"
     ).fillna(0.0)
