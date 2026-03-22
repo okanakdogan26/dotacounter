@@ -12,6 +12,7 @@ import streamlit as st
 API_BASE_URL = "https://api.opendota.com/api"
 STEAM_CDN_BASE_URL = "https://cdn.cloudflare.steamstatic.com"
 STEAM_HERO_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/heroes"
+STEAM_ITEM_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/items"
 ROLE_OPTIONS = ["All", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
@@ -24,6 +25,204 @@ REQUEST_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/122.0.0.0 Safari/537.36"
     )
+}
+
+ENEMY_ARCHETYPES = {
+    "wide_spell_damage": {
+        "Dark Seer",
+        "Death Prophet",
+        "Disruptor",
+        "Enigma",
+        "Invoker",
+        "Jakiro",
+        "Leshrac",
+        "Lina",
+        "Phoenix",
+        "Puck",
+        "Sand King",
+        "Skywrath Mage",
+        "Storm Spirit",
+        "Techies",
+        "Venomancer",
+        "Zeus",
+    },
+    "targeted_magic_damage": {
+        "Ancient Apparition",
+        "Crystal Maiden",
+        "Death Prophet",
+        "Invoker",
+        "Lina",
+        "Lion",
+        "Necrophos",
+        "Nyx Assassin",
+        "Ogre Magi",
+        "Oracle",
+        "Pugna",
+        "Skywrath Mage",
+        "Tinker",
+        "Zeus",
+    },
+    "jump_burst": {
+        "Axe",
+        "Batrider",
+        "Clockwerk",
+        "Legion Commander",
+        "Mars",
+        "Night Stalker",
+        "Nyx Assassin",
+        "Primal Beast",
+        "Puck",
+        "Riki",
+        "Slardar",
+        "Spirit Breaker",
+        "Storm Spirit",
+        "Tiny",
+        "Tusk",
+        "Void Spirit",
+    },
+    "super_regen": {
+        "Alchemist",
+        "Bristleback",
+        "Dragon Knight",
+        "Huskar",
+        "Morphling",
+        "Necrophos",
+        "Timbersaw",
+    },
+    "physical_right_click": {
+        "Clinkz",
+        "Drow Ranger",
+        "Juggernaut",
+        "Luna",
+        "Medusa",
+        "Monkey King",
+        "Muerta",
+        "Phantom Assassin",
+        "Shadow Fiend",
+        "Sniper",
+        "Templar Assassin",
+        "Terrorblade",
+        "Troll Warlord",
+        "Ursa",
+    },
+    "kitable_buffs": {
+        "Abaddon",
+        "Juggernaut",
+        "Lifestealer",
+        "Necrophos",
+        "Night Stalker",
+        "Troll Warlord",
+        "Ursa",
+    },
+    "roots_and_leashes": {
+        "Crystal Maiden",
+        "Dark Willow",
+        "Naga Siren",
+        "Nature's Prophet",
+        "Puck",
+        "Slark",
+        "Treant Protector",
+        "Underlord",
+    },
+    "single_target_spells": {
+        "Bane",
+        "Batrider",
+        "Beastmaster",
+        "Doom",
+        "Legion Commander",
+        "Lion",
+        "Oracle",
+        "Pudge",
+        "Shadow Shaman",
+        "Spirit Breaker",
+        "Vengeful Spirit",
+    },
+    "illusions_summons": {
+        "Beastmaster",
+        "Broodmother",
+        "Chaos Knight",
+        "Chen",
+        "Lycan",
+        "Naga Siren",
+        "Phantom Lancer",
+        "Terrorblade",
+        "Visage",
+    },
+    "escape_heroes": {
+        "Anti-Mage",
+        "Ember Spirit",
+        "Morphling",
+        "Pangolier",
+        "Puck",
+        "Queen of Pain",
+        "Riki",
+        "Storm Spirit",
+        "Void Spirit",
+        "Weaver",
+    },
+    "passive_reliant": {
+        "Bristleback",
+        "Dragon Knight",
+        "Huskar",
+        "Necrophos",
+        "Phantom Assassin",
+        "Spectre",
+        "Timbersaw",
+        "Treant Protector",
+        "Viper",
+    },
+    "hard_disable": {
+        "Axe",
+        "Bane",
+        "Beastmaster",
+        "Batrider",
+        "Disruptor",
+        "Enigma",
+        "Invoker",
+        "Legion Commander",
+        "Lion",
+        "Mars",
+        "Sand King",
+        "Shadow Shaman",
+        "Tiny",
+    },
+}
+
+ALLY_ARCHETYPES = {
+    "big_teamfight": {
+        "Dark Seer",
+        "Earthshaker",
+        "Enigma",
+        "Faceless Void",
+        "Magnus",
+        "Mars",
+        "Phoenix",
+        "Tidehunter",
+    },
+    "save_sensitive_cores": {
+        "Drow Ranger",
+        "Luna",
+        "Shadow Fiend",
+        "Sniper",
+        "Terrorblade",
+    },
+    "frontline_cores": {
+        "Bristleback",
+        "Centaur Warrunner",
+        "Dragon Knight",
+        "Mars",
+        "Primal Beast",
+        "Tidehunter",
+        "Underlord",
+    },
+    "pickoff_allies": {
+        "Batrider",
+        "Beastmaster",
+        "Doom",
+        "Legion Commander",
+        "Shadow Shaman",
+        "Spirit Breaker",
+    },
 }
 
 
@@ -73,6 +272,11 @@ def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> 
     )
 
 
+def get_item_image_url(item_slug: str) -> str:
+    """Return the Steam CDN URL for an item icon."""
+    return f"{STEAM_ITEM_IMAGE_BASE_URL}/{item_slug}.png"
+
+
 @st.cache_data(ttl=60 * 60, show_spinner=False)
 def load_synergy_config() -> dict:
     """Load local synergy presets and role weights."""
@@ -86,6 +290,244 @@ def load_synergy_config() -> dict:
     payload.setdefault("ally_synergy_map", {})
     payload.setdefault("role_synergy_weights", {})
     return payload
+
+
+def count_matching_heroes(hero_names: Iterable[str], hero_pool: set[str]) -> int:
+    """Count how many selected heroes belong to a named archetype pool."""
+    return sum(1 for hero_name in hero_names if hero_name in hero_pool)
+
+
+def add_item_suggestion(
+    suggestion_map: dict[str, dict],
+    *,
+    item_name: str,
+    item_slug: str,
+    score: float,
+    reason: str,
+    tags: Iterable[str],
+) -> None:
+    """Accumulate weighted item suggestions from multiple independent rules."""
+    if score <= 0:
+        return
+
+    entry = suggestion_map.setdefault(
+        item_name,
+        {
+            "item_name": item_name,
+            "item_slug": item_slug,
+            "score": 0.0,
+            "reasons": [],
+            "tags": set(),
+        },
+    )
+    entry["score"] += score
+    entry["reasons"].append(reason)
+    entry["tags"].update(tags)
+
+
+def build_item_suggestions(
+    selected_enemy_names: Iterable[str],
+    ally_hero_names: Iterable[str] | None,
+    selected_role: str,
+) -> pd.DataFrame:
+    """Build situational item suggestions from enemy threats and ally synergy context."""
+    enemy_names = list(selected_enemy_names)
+    ally_names = list(ally_hero_names or [])
+    suggestion_map: dict[str, dict] = {}
+
+    wide_spell_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["wide_spell_damage"])
+    targeted_magic_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["targeted_magic_damage"])
+    jump_burst_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["jump_burst"])
+    regen_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["super_regen"])
+    physical_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["physical_right_click"])
+    kite_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["kitable_buffs"])
+    root_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["roots_and_leashes"])
+    single_target_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["single_target_spells"])
+    illusions_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["illusions_summons"])
+    escape_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["escape_heroes"])
+    passive_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["passive_reliant"])
+    disable_count = count_matching_heroes(enemy_names, ENEMY_ARCHETYPES["hard_disable"])
+
+    big_teamfight_allies = count_matching_heroes(ally_names, ALLY_ARCHETYPES["big_teamfight"])
+    save_sensitive_allies = count_matching_heroes(ally_names, ALLY_ARCHETYPES["save_sensitive_cores"])
+    frontline_allies = count_matching_heroes(ally_names, ALLY_ARCHETYPES["frontline_cores"])
+    pickoff_allies = count_matching_heroes(ally_names, ALLY_ARCHETYPES["pickoff_allies"])
+
+    support_like = selected_role in {"Support", "Disabler"}
+    core_like = selected_role in {"Carry", "Mid", "Offlane"}
+
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Pipe of Insight",
+        item_slug="pipe",
+        score=wide_spell_count * 2.7 + big_teamfight_allies * 0.8,
+        reason="Enemy lineup has strong teamfight spell damage; aura mitigation gets higher value.",
+        tags=["Enemy Damage", "Aura"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Eternal Shroud",
+        item_slug="eternal_shroud",
+        score=targeted_magic_count * 2.3 + (1.0 if frontline_allies and core_like else 0.0),
+        reason="Enemy lineup can focus a single core with repeated magic damage.",
+        tags=["Survivability", "Magic"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Glimmer Cape",
+        item_slug="glimmer_cape",
+        score=(jump_burst_count * 1.8 + targeted_magic_count * 1.0 + save_sensitive_allies * 1.2)
+        if support_like or selected_role == "All"
+        else 0.0,
+        reason="Enemy jump plus burst makes fast save/invis usage much more valuable.",
+        tags=["Save", "Support"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Spirit Vessel",
+        item_slug="spirit_vessel",
+        score=regen_count * 3.2,
+        reason="Enemy lineup includes heavy regen or sustain cores that need healing reduction.",
+        tags=["Healing Reduction", "Counter"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Aeon Disk",
+        item_slug="aeon_disk",
+        score=jump_burst_count * 1.9 + single_target_count * 1.4 + disable_count * 0.9,
+        reason="Enemy lineup can delete one hero on contact; emergency dispel/passive save is high value.",
+        tags=["Save", "Burst"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Ghost Scepter",
+        item_slug="ghost",
+        score=max(physical_count * 2.0 - targeted_magic_count * 1.2, 0.0),
+        reason="Enemy damage profile leans heavily into right-clicks over direct magic punish.",
+        tags=["Defense", "Physical"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Eul's Scepter of Divinity",
+        item_slug="cyclone",
+        score=kite_count * 2.0 + escape_count * 0.8,
+        reason="Enemy heroes rely on short-lived buffs or timing windows that are easier to kite or reset.",
+        tags=["Utility", "Dispel"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Hurricane Pike",
+        item_slug="hurricane_pike",
+        score=(root_count * 2.2 + jump_burst_count * 0.7) if core_like or selected_role == "All" else 0.0,
+        reason="Enemy lineup has roots, leashes, or gap-close pressure that force reposition tools.",
+        tags=["Mobility", "Core"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Lotus Orb",
+        item_slug="lotus_orb",
+        score=single_target_count * 2.2 + disable_count * 0.8 + save_sensitive_allies * 0.9,
+        reason="Enemy lineup relies on targeted control or dispellable single-target spells.",
+        tags=["Reflect", "Dispel"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Linken's Sphere",
+        item_slug="sphere",
+        score=(single_target_count * 1.9 + jump_burst_count * 0.8) if core_like or selected_role == "All" else 0.0,
+        reason="Enemy draft has multiple high-value single-target initiations worth blocking.",
+        tags=["Defense", "Spell Block"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Black King Bar",
+        item_slug="black_king_bar",
+        score=(disable_count * 2.0 + targeted_magic_count * 0.7 + jump_burst_count * 0.6)
+        if core_like or selected_role == "All"
+        else 0.0,
+        reason="Enemy draft can lock down a core through repeated disables and magic burst.",
+        tags=["Core", "Immunity"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Crimson Guard",
+        item_slug="crimson_guard",
+        score=illusions_count * 2.6 + physical_count * 0.7,
+        reason="Enemy lineup has summons, illusions, or sustained physical chip damage.",
+        tags=["Aura", "Physical"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Orchid Malevolence",
+        item_slug="orchid",
+        score=(escape_count * 2.1 + pickoff_allies * 0.9) if core_like or selected_role == "All" else 0.0,
+        reason="Enemy lineup has mobile targets that become much easier to punish with silence.",
+        tags=["Catch", "Silence"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Heaven's Halberd",
+        item_slug="heavens_halberd",
+        score=physical_count * 2.0 + frontline_allies * 0.6,
+        reason="Enemy draft leans on right-click cores that can be disrupted with disarm.",
+        tags=["Counter", "Physical"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Silver Edge",
+        item_slug="silver_edge",
+        score=(passive_count * 2.8) if core_like or selected_role == "All" else 0.0,
+        reason="Enemy lineup includes passive-heavy cores that lose a lot of value when broken.",
+        tags=["Break", "Core"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Force Staff",
+        item_slug="force_staff",
+        score=(root_count * 1.8 + jump_burst_count * 1.0 + save_sensitive_allies * 0.9)
+        if support_like or selected_role == "All"
+        else 0.0,
+        reason="Enemy draft threatens catches and roots that are solved by instant repositioning.",
+        tags=["Save", "Mobility"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Solar Crest",
+        item_slug="solar_crest",
+        score=(save_sensitive_allies * 1.8 + frontline_allies * 1.2 + physical_count * 0.5)
+        if support_like or selected_role == "All"
+        else 0.0,
+        reason="Your ally lineup benefits from extra sustain, armor, and commit support in fights.",
+        tags=["Synergy", "Buff"],
+    )
+    add_item_suggestion(
+        suggestion_map,
+        item_name="Refresher Orb",
+        item_slug="refresher",
+        score=(big_teamfight_allies * 1.8 + wide_spell_count * 0.5) if core_like or selected_role == "All" else 0.0,
+        reason="Your ally lineup has layered teamfight ultimates, making second-round spell value much higher.",
+        tags=["Synergy", "Teamfight"],
+    )
+
+    if not suggestion_map:
+        return pd.DataFrame(columns=["item_name", "image_url", "score", "reason", "tags"])
+
+    suggestion_rows: list[dict] = []
+    for entry in suggestion_map.values():
+        suggestion_rows.append(
+            {
+                "item_name": entry["item_name"],
+                "image_url": get_item_image_url(entry["item_slug"]),
+                "score": round(entry["score"], 2),
+                "reason": entry["reasons"][0],
+                "tags": ", ".join(sorted(entry["tags"])),
+            }
+        )
+
+    suggestions_df = pd.DataFrame(suggestion_rows).sort_values(
+        ["score", "item_name"], ascending=[False, True]
+    )
+    return suggestions_df.head(6).reset_index(drop=True)
 
 
 def render_selected_hero_grid(selected_hero_names: list[str], hero_df: pd.DataFrame) -> None:
@@ -143,6 +585,37 @@ def render_counter_cards(results_df: pd.DataFrame) -> None:
             "</div>"
         )
     st.markdown(f'<div class="counter-cards-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+
+
+def render_item_suggestions(item_df: pd.DataFrame) -> None:
+    """Render situational item suggestions as compact cards."""
+    if item_df.empty:
+        return
+
+    st.subheader("Situational Item Suggestions")
+    cards: list[str] = []
+    for _, item_row in item_df.iterrows():
+        tag_html = "".join(
+            f'<span class="item-card-tag">{tag.strip()}</span>'
+            for tag in str(item_row["tags"]).split(",")
+            if tag.strip()
+        )
+        cards.append(
+            '<div class="item-card">'
+            '<div class="item-card-topline">'
+            f'<span class="item-card-score">Priority {item_row["score"]:.1f}</span>'
+            f'<div class="item-card-tags">{tag_html}</div>'
+            "</div>"
+            '<div class="item-card-body">'
+            f'<img src="{item_row["image_url"]}" alt="{item_row["item_name"]}" class="item-card-image" />'
+            '<div class="item-card-copy">'
+            f'<div class="item-card-name">{item_row["item_name"]}</div>'
+            f'<div class="item-card-reason">{item_row["reason"]}</div>'
+            "</div>"
+            "</div>"
+            "</div>"
+        )
+    st.markdown(f'<div class="item-cards-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
 def inject_app_theme() -> None:
@@ -351,6 +824,28 @@ def inject_app_theme() -> None:
             background: rgba(15, 139, 141, 0.2);
             color: #8de5e1;
         }
+        @media (prefers-color-scheme: dark) {
+            .item-card-score {
+                background: rgba(207, 139, 23, 0.2);
+                color: #ffd488;
+            }
+            .item-card-tag {
+                background: rgba(15, 139, 141, 0.2);
+                color: #8de5e1;
+            }
+        }
+        html[data-theme="dark"] .item-card-score,
+        body[data-theme="dark"] .item-card-score,
+        [data-theme="dark"] .item-card-score {
+            background: rgba(207, 139, 23, 0.2);
+            color: #ffd488;
+        }
+        html[data-theme="dark"] .item-card-tag,
+        body[data-theme="dark"] .item-card-tag,
+        [data-theme="dark"] .item-card-tag {
+            background: rgba(15, 139, 141, 0.2);
+            color: #8de5e1;
+        }
         .counter-card-image {
             width: 100%;
             border-radius: 12px;
@@ -369,6 +864,80 @@ def inject_app_theme() -> None:
             color: var(--text-muted);
             font-size: 0.76rem;
             line-height: 1.35;
+        }
+        .item-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        .item-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-soft);
+            border-radius: 16px;
+            padding: 0.8rem 0.9rem;
+            box-shadow: var(--shadow-soft);
+        }
+        .item-card-topline {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            margin-bottom: 0.65rem;
+        }
+        .item-card-score {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.24rem 0.54rem;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            background: rgba(207, 139, 23, 0.14);
+            color: #8a5a09;
+        }
+        .item-card-tags {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 0.35rem;
+        }
+        .item-card-tag {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.2rem 0.48rem;
+            font-size: 0.66rem;
+            font-weight: 700;
+            background: rgba(15, 139, 141, 0.12);
+            color: #0b6f70;
+        }
+        .item-card-body {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        .item-card-image {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+        .item-card-copy {
+            min-width: 0;
+        }
+        .item-card-name {
+            color: var(--text-main);
+            font-size: 0.96rem;
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+            line-height: 1.2;
+        }
+        .item-card-reason {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            line-height: 1.45;
         }
         h1, h2, h3 {
             color: var(--text-main);
@@ -426,7 +995,8 @@ def inject_app_theme() -> None:
         }
         @media (max-width: 1200px) {
             .enemy-heroes-grid,
-            .counter-cards-grid {
+            .counter-cards-grid,
+            .item-cards-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
         }
@@ -446,7 +1016,8 @@ def inject_app_theme() -> None:
             }
             .summary-strip,
             .enemy-heroes-grid,
-            .counter-cards-grid {
+            .counter-cards-grid,
+            .item-cards-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 0.65rem;
             }
@@ -457,11 +1028,13 @@ def inject_app_theme() -> None:
         @media (max-width: 560px) {
             .summary-strip,
             .enemy-heroes-grid,
-            .counter-cards-grid {
+            .counter-cards-grid,
+            .item-cards-grid {
                 grid-template-columns: minmax(0, 1fr);
             }
             .enemy-hero-card,
-            .counter-card {
+            .counter-card,
+            .item-card {
                 padding: 0.5rem;
             }
             .enemy-hero-name,
@@ -470,6 +1043,20 @@ def inject_app_theme() -> None:
             }
             .counter-card-meta {
                 font-size: 0.72rem;
+            }
+            .item-card-topline {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .item-card-tags {
+                justify-content: flex-start;
+            }
+            .item-card-image {
+                width: 48px;
+                height: 48px;
+            }
+            .item-card-reason {
+                font-size: 0.76rem;
             }
         }
         </style>
@@ -1077,6 +1664,12 @@ def main() -> None:
     st.caption("Ranking logic: OpenDota confidence score + local Dotabuff worst-versus signal")
     if show_synergy and effective_ally_hero_names:
         st.caption("Synergy weighting: ally combo heroes receive an additional score bonus")
+    item_suggestions_df = build_item_suggestions(
+        selected_hero_names,
+        effective_ally_hero_names,
+        selected_role,
+    )
+    render_item_suggestions(item_suggestions_df)
     render_counter_cards(results_df)
 
     display_df = results_df.copy()
