@@ -17,6 +17,7 @@ yerel Dotabuff `Worst Versus` dataset'i ile siralamayi guclendirir.
 - Stabilize win rate, orneklem buyuklugu ve rakip kapsama oranina dayali `confidence score` uretir
 - Yerel Dotabuff `Worst Versus` dataset'i varsa `hybrid score` ile siralamayi guclendirir
 - Sonuclari tablo ve bar chart olarak gosterir
+- Opsiyonel `Invoker Assistant Mode` ile draft zayifliklarini, Quas-Wex vs Quas-Exort yol ayrimini, kritik item timinglerini ve kombo onceligini yorumlar
 - Dusuk veri veya API hatalari icin kullanici dostu uyari mesaji verir
 
 ## Yerel Calistirma
