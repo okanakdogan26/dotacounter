@@ -1012,58 +1012,52 @@ def inject_app_theme() -> None:
         """
         <style>
         :root {
-            --bg-main: #f4f1e8;
-            --bg-panel: rgba(255, 255, 255, 0.76);
-            --bg-panel-strong: rgba(255, 255, 255, 0.9);
-            --bg-select: rgba(255,255,255,0.82);
-            --border-soft: rgba(44, 56, 72, 0.12);
-            --text-main: #232a36;
-            --text-muted: #6f7888;
+            --st-bg: var(--background-color, #f4f1e8);
+            --st-panel: var(--secondary-background-color, rgba(255, 255, 255, 0.76));
+            --st-text: var(--text-color, #232a36);
+            --bg-main: color-mix(in srgb, var(--st-bg) 92%, #0f141b 8%);
+            --bg-panel: color-mix(in srgb, var(--st-panel) 82%, transparent);
+            --bg-panel-strong: color-mix(in srgb, var(--st-panel) 92%, var(--st-bg) 8%);
+            --bg-select: color-mix(in srgb, var(--st-panel) 88%, var(--st-bg) 12%);
+            --border-soft: color-mix(in srgb, var(--st-text) 14%, transparent);
+            --text-main: var(--st-text);
+            --text-muted: color-mix(in srgb, var(--st-text) 62%, var(--st-bg) 38%);
             --accent-gold: #cf8b17;
             --accent-teal: #0f8b8d;
             --shadow-soft: 0 18px 40px rgba(31, 38, 49, 0.08);
+            --sidebar-border: color-mix(in srgb, var(--st-text) 10%, transparent);
             --app-bg:
                 radial-gradient(circle at top left, rgba(207, 139, 23, 0.14), transparent 28%),
                 radial-gradient(circle at top right, rgba(15, 139, 141, 0.12), transparent 24%),
-                linear-gradient(180deg, #f6f2e9 0%, #ede8dc 100%);
-            --sidebar-bg: linear-gradient(180deg, rgba(251, 249, 244, 0.96), rgba(240, 236, 226, 0.96));
-            --card-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(250,247,241,0.9));
-        }
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-main: #0f141b;
-                --bg-panel: rgba(22, 29, 39, 0.82);
-                --bg-panel-strong: rgba(26, 34, 46, 0.94);
-                --bg-select: rgba(24, 31, 42, 0.92);
-                --border-soft: rgba(171, 185, 204, 0.14);
-                --text-main: #edf2f7;
-                --text-muted: #9aa7bb;
-                --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.26);
-                --app-bg:
-                    radial-gradient(circle at top left, rgba(207, 139, 23, 0.12), transparent 28%),
-                    radial-gradient(circle at top right, rgba(15, 139, 141, 0.12), transparent 24%),
-                    linear-gradient(180deg, #111821 0%, #0b1118 100%);
-                --sidebar-bg: linear-gradient(180deg, rgba(16, 22, 31, 0.98), rgba(12, 18, 26, 0.98));
-                --card-bg: linear-gradient(180deg, rgba(26,34,46,0.94), rgba(18,24,33,0.92));
-            }
-        }
-        html[data-theme="dark"],
-        body[data-theme="dark"],
-        [data-theme="dark"] {
-            --bg-main: #0f141b;
-            --bg-panel: rgba(22, 29, 39, 0.82);
-            --bg-panel-strong: rgba(26, 34, 46, 0.94);
-            --bg-select: rgba(24, 31, 42, 0.92);
-            --border-soft: rgba(171, 185, 204, 0.14);
-            --text-main: #edf2f7;
-            --text-muted: #9aa7bb;
-            --shadow-soft: 0 18px 40px rgba(0, 0, 0, 0.26);
-            --app-bg:
-                radial-gradient(circle at top left, rgba(207, 139, 23, 0.12), transparent 28%),
-                radial-gradient(circle at top right, rgba(15, 139, 141, 0.12), transparent 24%),
-                linear-gradient(180deg, #111821 0%, #0b1118 100%);
-            --sidebar-bg: linear-gradient(180deg, rgba(16, 22, 31, 0.98), rgba(12, 18, 26, 0.98));
-            --card-bg: linear-gradient(180deg, rgba(26,34,46,0.94), rgba(18,24,33,0.92));
+                linear-gradient(
+                    180deg,
+                    color-mix(in srgb, var(--st-bg) 92%, white 8%) 0%,
+                    color-mix(in srgb, var(--st-bg) 94%, black 6%) 100%
+                );
+            --sidebar-bg: linear-gradient(
+                180deg,
+                color-mix(in srgb, var(--st-panel) 94%, var(--st-bg) 6%),
+                color-mix(in srgb, var(--st-panel) 84%, var(--st-bg) 16%)
+            );
+            --card-bg: linear-gradient(
+                180deg,
+                color-mix(in srgb, var(--st-panel) 94%, white 6%),
+                color-mix(in srgb, var(--st-panel) 88%, var(--st-bg) 12%)
+            );
+            --feature-panel-bg: linear-gradient(
+                180deg,
+                color-mix(in srgb, var(--st-panel) 72%, #11161d 28%) 0%,
+                color-mix(in srgb, var(--st-panel) 76%, #0c1118 24%) 100%
+            );
+            --feature-panel-title: color-mix(in srgb, var(--st-text) 92%, white 8%);
+            --feature-panel-subtle: color-mix(in srgb, var(--st-text) 56%, var(--st-bg) 44%);
+            --feature-panel-gold-border: rgba(255, 184, 0, 0.18);
+            --feature-panel-teal-border: rgba(64, 236, 217, 0.18);
+            --feature-panel-inset: inset 0 1px 0 rgba(255,255,255,0.03);
+            --pill-primary-bg: color-mix(in srgb, var(--accent-gold) 18%, transparent);
+            --pill-primary-text: color-mix(in srgb, var(--accent-gold) 72%, var(--st-text) 28%);
+            --pill-teal-bg: color-mix(in srgb, var(--accent-teal) 16%, transparent);
+            --pill-teal-text: color-mix(in srgb, var(--accent-teal) 72%, var(--st-text) 28%);
         }
         .stApp {
             background: var(--app-bg);
@@ -1076,7 +1070,7 @@ def inject_app_theme() -> None:
         }
         [data-testid="stSidebar"] {
             background: var(--sidebar-bg);
-            border-right: 1px solid rgba(44, 56, 72, 0.08);
+            border-right: 1px solid var(--sidebar-border);
         }
         div[data-baseweb="select"] > div {
             background: var(--bg-select);
@@ -1221,56 +1215,12 @@ def inject_app_theme() -> None:
             letter-spacing: 0.01em;
         }
         .counter-card-pill.primary {
-            background: rgba(207, 139, 23, 0.14);
-            color: #8a5a09;
+            background: var(--pill-primary-bg);
+            color: var(--pill-primary-text);
         }
         .counter-card-pill.synergy {
-            background: rgba(15, 139, 141, 0.12);
-            color: #0b6f70;
-        }
-        @media (prefers-color-scheme: dark) {
-            .counter-card-pill.primary {
-                background: rgba(207, 139, 23, 0.2);
-                color: #ffd488;
-            }
-            .counter-card-pill.synergy {
-                background: rgba(15, 139, 141, 0.2);
-                color: #8de5e1;
-            }
-        }
-        html[data-theme="dark"] .counter-card-pill.primary,
-        body[data-theme="dark"] .counter-card-pill.primary,
-        [data-theme="dark"] .counter-card-pill.primary {
-            background: rgba(207, 139, 23, 0.2);
-            color: #ffd488;
-        }
-        html[data-theme="dark"] .counter-card-pill.synergy,
-        body[data-theme="dark"] .counter-card-pill.synergy,
-        [data-theme="dark"] .counter-card-pill.synergy {
-            background: rgba(15, 139, 141, 0.2);
-            color: #8de5e1;
-        }
-        @media (prefers-color-scheme: dark) {
-            .item-card-score {
-                background: rgba(207, 139, 23, 0.2);
-                color: #ffd488;
-            }
-            .item-card-tag {
-                background: rgba(15, 139, 141, 0.2);
-                color: #8de5e1;
-            }
-        }
-        html[data-theme="dark"] .item-card-score,
-        body[data-theme="dark"] .item-card-score,
-        [data-theme="dark"] .item-card-score {
-            background: rgba(207, 139, 23, 0.2);
-            color: #ffd488;
-        }
-        html[data-theme="dark"] .item-card-tag,
-        body[data-theme="dark"] .item-card-tag,
-        [data-theme="dark"] .item-card-tag {
-            background: rgba(15, 139, 141, 0.2);
-            color: #8de5e1;
+            background: var(--pill-teal-bg);
+            color: var(--pill-teal-text);
         }
         .counter-card-image {
             width: 100%;
@@ -1321,8 +1271,8 @@ def inject_app_theme() -> None:
             font-size: 0.7rem;
             font-weight: 800;
             letter-spacing: 0.01em;
-            background: rgba(207, 139, 23, 0.14);
-            color: #8a5a09;
+            background: var(--pill-primary-bg);
+            color: var(--pill-primary-text);
         }
         .item-card-tags {
             display: flex;
@@ -1337,8 +1287,8 @@ def inject_app_theme() -> None:
             padding: 0.2rem 0.48rem;
             font-size: 0.66rem;
             font-weight: 700;
-            background: rgba(15, 139, 141, 0.12);
-            color: #0b6f70;
+            background: var(--pill-teal-bg);
+            color: var(--pill-teal-text);
         }
         .item-card-body {
             display: flex;
@@ -1383,35 +1333,35 @@ def inject_app_theme() -> None:
             color: var(--text-muted);
         }
         .enemy-draft-shell {
-            background: linear-gradient(180deg, #171c24 0%, #11161d 100%);
-            border: 1px solid rgba(255, 184, 0, 0.18);
+            background: var(--feature-panel-bg);
+            border: 1px solid var(--feature-panel-gold-border);
             border-radius: 18px;
             padding: 1rem 1.1rem 1.2rem;
             margin: 0.8rem 0 1.2rem;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+            box-shadow: var(--feature-panel-inset);
         }
         .enemy-draft-title {
-            color: #f3f5f7;
+            color: var(--feature-panel-title);
             font-size: 1.55rem;
             font-weight: 800;
             letter-spacing: 0.01em;
             margin: 0;
         }
         .enemy-draft-subtitle {
-            color: #8ea0b5;
+            color: var(--feature-panel-subtle);
             font-size: 0.86rem;
             margin-top: 0.2rem;
         }
         .hero-selection-shell {
-            background: linear-gradient(180deg, #171c24 0%, #11161d 100%);
-            border: 1px solid rgba(64, 236, 217, 0.18);
+            background: var(--feature-panel-bg);
+            border: 1px solid var(--feature-panel-teal-border);
             border-radius: 18px;
             padding: 1rem 1.1rem 1.2rem;
             margin: 0.8rem 0 1.2rem;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+            box-shadow: var(--feature-panel-inset);
         }
         .panel-heading {
-            color: #f3f5f7;
+            color: var(--feature-panel-title);
             font-size: 1.15rem;
             font-weight: 800;
             letter-spacing: 0.06em;
@@ -1423,7 +1373,7 @@ def inject_app_theme() -> None:
             border-radius: 12px;
         }
         .slot-label {
-            color: #8ea0b5;
+            color: var(--feature-panel-subtle);
             font-size: 0.78rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
