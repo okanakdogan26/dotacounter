@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from html import escape
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from textwrap import dedent
 from typing import Iterable
 
 import pandas as pd
@@ -13,6 +15,7 @@ API_BASE_URL = "https://api.opendota.com/api"
 STEAM_CDN_BASE_URL = "https://cdn.cloudflare.steamstatic.com"
 STEAM_HERO_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/heroes"
 STEAM_ITEM_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/items"
+STEAM_ABILITY_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/abilities"
 ROLE_OPTIONS = ["All", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
@@ -466,6 +469,32 @@ INVOKER_ITEM_REMINDERS = {
     },
 }
 
+INVOKER_ITEM_SLUGS = {
+    "Aghanim's Scepter": "ultimate_scepter",
+    "Black King Bar": "black_king_bar",
+    "Blink Dagger": "blink",
+    "Eul's Scepter of Divinity": "cyclone",
+    "Ghost Scepter": "ghost",
+    "Linken's Sphere": "sphere",
+    "Orchid Malevolence": "orchid",
+    "Scythe of Vyse": "sheepstick",
+    "Spirit Vessel": "spirit_vessel",
+    "Urn of Shadows": "urn_of_shadows",
+}
+
+INVOKER_SPELL_IMAGE_SLUGS = {
+    "Alacrity": "invoker_alacrity",
+    "Chaos Meteor": "invoker_chaos_meteor",
+    "Cold Snap": "invoker_cold_snap",
+    "Deafening Blast": "invoker_deafening_blast",
+    "EMP": "invoker_emp",
+    "Forge Spirit": "invoker_forge_spirit",
+    "Ghost Walk": "invoker_ghost_walk",
+    "Ice Wall": "invoker_ice_wall",
+    "Sun Strike": "invoker_sun_strike",
+    "Tornado": "invoker_tornado",
+}
+
 
 def matches_role_filter(roles: list[str] | object, selected_role: str) -> bool:
     """Match UI roles against OpenDota roles and a few inferred lane heuristics."""
@@ -516,6 +545,11 @@ def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> 
 def get_item_image_url(item_slug: str) -> str:
     """Return the Steam CDN URL for an item icon."""
     return f"{STEAM_ITEM_IMAGE_BASE_URL}/{item_slug}.png"
+
+
+def get_ability_image_url(ability_slug: str) -> str:
+    """Return the Steam CDN URL for an ability icon."""
+    return f"{STEAM_ABILITY_IMAGE_BASE_URL}/{ability_slug}.png"
 
 
 @st.cache_data(ttl=60 * 60, show_spinner=False)
@@ -1379,15 +1413,476 @@ def inject_app_theme() -> None:
             letter-spacing: 0.08em;
             margin-bottom: 0.35rem;
         }
+        .invoker-shell {
+            background: linear-gradient(
+                135deg,
+                color-mix(in srgb, var(--st-panel) 94%, rgba(207, 139, 23, 0.08) 6%),
+                color-mix(in srgb, var(--st-panel) 90%, rgba(15, 139, 141, 0.08) 10%)
+            );
+            border: 1px solid var(--border-soft);
+            border-radius: 26px;
+            padding: 1.25rem 1.25rem 1.35rem;
+            margin: 1rem 0 1.35rem;
+            box-shadow: var(--shadow-soft);
+        }
+        .invoker-hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.9fr);
+            gap: 1rem;
+            align-items: stretch;
+            margin-bottom: 1rem;
+        }
+        .invoker-hero-panel,
+        .invoker-route-panel,
+        .invoker-analysis-card,
+        .invoker-skill-phase,
+        .invoker-item-card,
+        .invoker-spell-card,
+        .invoker-combo-card {
+            background: var(--bg-panel-strong);
+            border: 1px solid var(--border-soft);
+            border-radius: 22px;
+            box-shadow: var(--shadow-soft);
+        }
+        .invoker-hero-panel {
+            padding: 1.35rem 1.4rem;
+            background:
+                radial-gradient(circle at top left, rgba(207, 139, 23, 0.15), transparent 30%),
+                linear-gradient(
+                    180deg,
+                    color-mix(in srgb, var(--bg-panel-strong) 96%, white 4%),
+                    color-mix(in srgb, var(--bg-panel-strong) 88%, var(--st-bg) 12%)
+                );
+        }
+        .invoker-kicker {
+            color: var(--accent-gold);
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            margin-bottom: 0.6rem;
+        }
+        .invoker-title {
+            color: var(--text-main);
+            font-size: 2.15rem;
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            line-height: 1.02;
+            margin: 0;
+        }
+        .invoker-copy {
+            color: var(--text-muted);
+            font-size: 0.96rem;
+            line-height: 1.55;
+            margin-top: 0.7rem;
+            max-width: 62ch;
+        }
+        .invoker-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+        .invoker-metric {
+            background: color-mix(in srgb, var(--st-bg) 30%, transparent);
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            padding: 0.8rem 0.9rem;
+        }
+        .invoker-metric-label {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .invoker-metric-value {
+            color: var(--text-main);
+            font-size: 1.25rem;
+            font-weight: 900;
+            margin-top: 0.25rem;
+        }
+        .invoker-metric-subtle {
+            color: var(--text-muted);
+            font-size: 0.76rem;
+            margin-top: 0.22rem;
+            line-height: 1.4;
+        }
+        .invoker-route-panel {
+            padding: 1.2rem 1.2rem 1.15rem;
+            background:
+                radial-gradient(circle at top right, rgba(15, 139, 141, 0.16), transparent 35%),
+                linear-gradient(
+                    180deg,
+                    color-mix(in srgb, var(--bg-panel-strong) 98%, white 2%),
+                    color-mix(in srgb, var(--bg-panel-strong) 84%, var(--st-bg) 16%)
+                );
+        }
+        .invoker-route-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--accent-teal) 18%, transparent);
+            color: var(--text-main);
+            border: 1px solid color-mix(in srgb, var(--accent-teal) 30%, transparent);
+            padding: 0.42rem 0.72rem;
+            font-size: 0.72rem;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .invoker-route-title {
+            color: var(--text-main);
+            font-size: 1.7rem;
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            margin: 0.75rem 0 0.35rem;
+        }
+        .invoker-route-reason {
+            color: var(--text-main);
+            font-size: 0.96rem;
+            font-weight: 650;
+            line-height: 1.5;
+            margin-bottom: 0.7rem;
+        }
+        .invoker-route-plan {
+            color: var(--text-muted);
+            font-size: 0.86rem;
+            line-height: 1.55;
+        }
+        .invoker-tag-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-top: 0.8rem;
+        }
+        .invoker-tag {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 0.28rem 0.58rem;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            background: color-mix(in srgb, var(--st-bg) 28%, transparent);
+            color: var(--text-main);
+            border: 1px solid var(--border-soft);
+        }
+        .invoker-analysis-grid,
+        .invoker-bottom-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.95rem;
+            margin-top: 0.95rem;
+        }
+        .invoker-section-title {
+            color: var(--text-main);
+            font-size: 0.88rem;
+            font-weight: 900;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 0.8rem;
+        }
+        .invoker-analysis-card,
+        .invoker-spell-card {
+            padding: 1rem 1.05rem;
+        }
+        .invoker-note-list {
+            display: grid;
+            gap: 0.65rem;
+        }
+        .invoker-note {
+            display: flex;
+            gap: 0.7rem;
+            align-items: flex-start;
+            color: var(--text-main);
+            font-size: 0.92rem;
+            line-height: 1.55;
+        }
+        .invoker-note-dot {
+            width: 0.62rem;
+            height: 0.62rem;
+            margin-top: 0.42rem;
+            border-radius: 999px;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, var(--accent-gold), var(--accent-teal));
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-gold) 14%, transparent);
+        }
+        .invoker-skill-shell {
+            margin-top: 1.05rem;
+        }
+        .invoker-skill-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.95rem;
+            margin-top: 0.95rem;
+        }
+        .invoker-skill-phase {
+            padding: 1rem;
+        }
+        .invoker-phase-title {
+            color: var(--text-main);
+            font-size: 1.08rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+        }
+        .invoker-phase-copy {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            line-height: 1.45;
+            margin-top: 0.24rem;
+            margin-bottom: 0.75rem;
+        }
+        .invoker-level-stack {
+            display: grid;
+            gap: 0.6rem;
+        }
+        .invoker-level-card {
+            background: color-mix(in srgb, var(--st-bg) 30%, transparent);
+            border: 1px solid var(--border-soft);
+            border-radius: 18px;
+            padding: 0.75rem 0.8rem;
+        }
+        .invoker-level-topline {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.65rem;
+            margin-bottom: 0.42rem;
+        }
+        .invoker-level-badge {
+            color: var(--text-muted);
+            font-size: 0.68rem;
+            font-weight: 900;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+        .invoker-orb-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 84px;
+            border-radius: 999px;
+            padding: 0.34rem 0.58rem;
+            font-size: 0.7rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border: 1px solid transparent;
+        }
+        .invoker-orb-quas {
+            background: rgba(74, 151, 255, 0.14);
+            color: #579cff;
+            border-color: rgba(74, 151, 255, 0.22);
+        }
+        .invoker-orb-wex {
+            background: rgba(163, 92, 255, 0.14);
+            color: #ae83ff;
+            border-color: rgba(163, 92, 255, 0.22);
+        }
+        .invoker-orb-exort {
+            background: rgba(255, 150, 74, 0.16);
+            color: #ffb067;
+            border-color: rgba(255, 150, 74, 0.24);
+        }
+        .invoker-orb-invoke,
+        .invoker-orb-talent {
+            background: color-mix(in srgb, var(--accent-gold) 14%, transparent);
+            color: var(--text-main);
+            border-color: color-mix(in srgb, var(--accent-gold) 24%, transparent);
+        }
+        .invoker-level-reason {
+            color: var(--text-main);
+            font-size: 0.84rem;
+            line-height: 1.48;
+        }
+        .invoker-items-grid,
+        .invoker-combo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.85rem;
+            margin-top: 0.9rem;
+        }
+        .invoker-item-card,
+        .invoker-combo-card {
+            padding: 0.95rem 1rem;
+        }
+        .invoker-talent-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin-top: 0.9rem;
+        }
+        .invoker-talent-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 78px minmax(0, 1fr);
+            gap: 0.65rem;
+            align-items: stretch;
+        }
+        .invoker-talent-option,
+        .invoker-talent-level {
+            border-radius: 18px;
+            border: 1px solid var(--border-soft);
+        }
+        .invoker-talent-option {
+            padding: 0.8rem 0.9rem;
+            background: color-mix(in srgb, var(--st-bg) 30%, transparent);
+        }
+        .invoker-talent-option.recommended {
+            background: linear-gradient(
+                135deg,
+                color-mix(in srgb, var(--accent-gold) 16%, transparent),
+                color-mix(in srgb, var(--accent-teal) 14%, transparent)
+            );
+            border-color: color-mix(in srgb, var(--accent-gold) 26%, transparent);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-gold) 12%, transparent);
+        }
+        .invoker-talent-choice {
+            color: var(--text-main);
+            font-size: 0.95rem;
+            font-weight: 800;
+            line-height: 1.35;
+        }
+        .invoker-talent-why {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            line-height: 1.5;
+            margin-top: 0.35rem;
+        }
+        .invoker-talent-level {
+            background: linear-gradient(180deg, rgba(34, 85, 168, 0.95), rgba(28, 68, 135, 0.95));
+            color: #f3f6fb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.35rem;
+            font-weight: 900;
+            letter-spacing: -0.03em;
+        }
+        .invoker-item-topline {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+        .invoker-item-title {
+            display: flex;
+            align-items: center;
+            gap: 0.72rem;
+            min-width: 0;
+        }
+        .invoker-item-icon,
+        .invoker-combo-token-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            object-fit: cover;
+            flex-shrink: 0;
+            border: 1px solid var(--border-soft);
+            background: color-mix(in srgb, var(--st-bg) 28%, transparent);
+        }
+        .invoker-item-name {
+            color: var(--text-main);
+            font-size: 1rem;
+            font-weight: 850;
+            line-height: 1.25;
+        }
+        .invoker-item-weight {
+            color: var(--accent-gold);
+            font-size: 1rem;
+            font-weight: 900;
+            flex-shrink: 0;
+        }
+        .invoker-item-timing {
+            color: var(--text-muted);
+            font-size: 0.76rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-top: 0.32rem;
+        }
+        .invoker-item-bar {
+            height: 0.46rem;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--st-bg) 36%, transparent);
+            overflow: hidden;
+            margin: 0.7rem 0;
+        }
+        .invoker-item-bar-fill {
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--accent-gold), var(--accent-teal));
+        }
+        .invoker-item-reason,
+        .invoker-combo-why {
+            color: var(--text-main);
+            font-size: 0.84rem;
+            line-height: 1.52;
+        }
+        .invoker-combo-phase {
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 900;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 0.55rem;
+        }
+        .invoker-combo-token-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-bottom: 0.65rem;
+        }
+        .invoker-combo-token {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            border-radius: 999px;
+            padding: 0.26rem 0.42rem 0.26rem 0.28rem;
+            background: color-mix(in srgb, var(--st-bg) 28%, transparent);
+            border: 1px solid var(--border-soft);
+            color: var(--text-main);
+            font-size: 0.72rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+        .invoker-combo-token-icon {
+            width: 26px;
+            height: 26px;
+            border-radius: 999px;
+        }
+        .invoker-combo-token-textonly {
+            padding: 0.36rem 0.58rem;
+        }
+        .invoker-combo-spell {
+            color: var(--text-main);
+            font-size: 1rem;
+            font-weight: 850;
+            line-height: 1.4;
+            margin-bottom: 0.45rem;
+        }
         @media (max-width: 1200px) {
             .enemy-heroes-grid,
             .counter-cards-grid,
-            .item-cards-grid {
+            .item-cards-grid,
+            .invoker-skill-grid,
+            .invoker-items-grid,
+            .invoker-combo-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
         }
         @media (max-width: 1100px) {
             .summary-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .invoker-hero,
+            .invoker-analysis-grid,
+            .invoker-bottom-grid,
+            .invoker-skill-grid {
+                grid-template-columns: 1fr;
+            }
+            .invoker-items-grid,
+            .invoker-combo-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
         }
@@ -1403,19 +1898,33 @@ def inject_app_theme() -> None:
             .summary-strip,
             .enemy-heroes-grid,
             .counter-cards-grid,
-            .item-cards-grid {
+            .item-cards-grid,
+            .invoker-items-grid,
+            .invoker-combo-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 0.65rem;
             }
             .summary-card {
                 padding: 0.85rem 0.85rem 0.8rem;
             }
+            .invoker-shell {
+                padding: 1rem;
+                border-radius: 20px;
+            }
+            .invoker-title {
+                font-size: 1.8rem;
+            }
+            .invoker-metrics {
+                grid-template-columns: 1fr;
+            }
         }
         @media (max-width: 560px) {
             .summary-strip,
             .enemy-heroes-grid,
             .counter-cards-grid,
-            .item-cards-grid {
+            .item-cards-grid,
+            .invoker-items-grid,
+            .invoker-combo-grid {
                 grid-template-columns: minmax(0, 1fr);
             }
             .enemy-hero-card,
@@ -1443,6 +1952,15 @@ def inject_app_theme() -> None:
             }
             .item-card-reason {
                 font-size: 0.76rem;
+            }
+            .invoker-level-topline,
+            .invoker-item-topline,
+            .invoker-talent-row {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .invoker-orb-pill {
+                min-width: 0;
             }
         }
         </style>
@@ -1579,65 +2097,71 @@ def build_invoker_skill_build(
         {"level": "3", "orb": "", "why": ""},
         {"level": "4", "orb": "", "why": ""},
         {"level": "5", "orb": "", "why": ""},
-        {"level": "6", "orb": "Invoke", "why": "First real combo window opens here."},
+        {"level": "6", "orb": "", "why": ""},
         {"level": "7", "orb": "", "why": ""},
         {"level": "8", "orb": "", "why": ""},
         {"level": "9", "orb": "", "why": ""},
-        {"level": "10", "orb": "Talent", "why": "Take the talent that supports your route and lane state."},
+        {"level": "10", "orb": "", "why": ""},
         {"level": "11", "orb": "", "why": ""},
         {"level": "12", "orb": "", "why": ""},
         {"level": "13", "orb": "", "why": ""},
         {"level": "14", "orb": "", "why": ""},
-        {"level": "15", "orb": "Talent", "why": "Choose the talent that matches whether fights are about burst conversion or safer spell uptime."},
+        {"level": "15", "orb": "", "why": ""},
         {"level": "16", "orb": "", "why": ""},
         {"level": "17", "orb": "", "why": ""},
         {"level": "18", "orb": "", "why": ""},
     ]
 
     if route_title == "Quas-Wex":
-        default_orbs = ["Quas", "Wex", "Wex", "Quas", "Wex", "Quas"]
+        default_orbs = ["Quas", "Wex", "Wex", "Quas", "Wex", "Quas", "Quas"]
         fallback_notes = [
             "Lane sustain and last-hit security.",
             "Unlock movement and harassment.",
             "Accelerate EMP and skirmish tempo.",
             "Extra survivability for trades.",
             "Reach stronger Tornado-EMP pacing.",
+            "First Invoke timing is live now, so add survivability for cleaner combo setup.",
             "Stabilize before mid-game rotations.",
         ]
         level8_default = ("Quas", "A third Quas point gives better trading margin once fights become longer.")
         level9_default = ("Wex", "This sharpens your main tempo route before mid-game skirmishes fully open.")
         late_defaults = {
+            "10": ("Wex", "Strengthen your tempo route before enemies settle into cleaner mid-game item timing."),
             "11": ("Wex", "Mid-game fights still reward catch, tempo, and cleaner EMP connections."),
             "12": ("Quas", "Extra Quas makes repeated spell cycles safer when fights start extending."),
             "13": ("Wex", "Keep your main control route ahead of enemy mobility and BKB timings."),
             "14": ("Quas", "This is the defensive stabilizer point if enemies are reaching you too easily."),
+            "15": ("Quas", "More staying power matters if fights are becoming longer than one clean combo."),
             "16": ("Wex", "By now your identity should fully support control-heavy mid-game fights."),
             "17": ("Quas", "More survivability lets you get a second spell cycle instead of dying after first contact."),
             "18": ("Wex", "Cap the route that most directly affects tempo and catch reliability."),
         }
     else:
-        default_orbs = ["Exort", "Quas", "Exort", "Quas", "Exort", "Wex"]
+        default_orbs = ["Exort", "Quas", "Exort", "Quas", "Exort", "Wex", "Wex"]
         fallback_notes = [
             "Open with stronger lane pressure and denies.",
             "Add sustain so lane damage sticks less on you.",
             "Forge Spirit and Sun Strike scaling improve.",
             "Quas keeps the lane playable while greedier levels come in.",
             "Hit your real damage spike earlier.",
+            "First Invoke timing is live now, so add cast flow and positioning.",
             "One Wex point improves spell access and positioning.",
         ]
         level8_default = ("Wex", "A first meaningful Wex point improves reach and makes spell sequencing less clunky.")
         level9_default = ("Exort", "This keeps your damage route ahead of enemy defensive item timings.")
         late_defaults = {
-            "11": ("Exort", "Push your damage breakpoint before enemy cores become too tanky for partial combos."),
+            "10": ("Exort", "Push your damage breakpoint before enemy cores become too tanky for partial combos."),
+            "11": ("Exort", "Keep your damage route ahead of the first real defensive timings."),
             "12": ("Quas", "A stabilizing Quas point keeps you from becoming too punishable while scaling."),
             "13": ("Exort", "This is where Forge Spirit, Sun Strike, and Meteor conversions start to matter more."),
             "14": ("Wex", "You need enough mobility and cast fluidity to actually deliver your damage spells."),
+            "15": ("Exort", "Stay committed to the high-damage route if enemies are still killable through control."),
             "16": ("Exort", "Continue into the high-damage route if you are still killing targets through control."),
             "17": ("Quas", "Take extra safety once enemy jump and BKB timings compress your casting window."),
             "18": ("Exort", "Finish the level 18 segment by maximizing your main scaling vector."),
         }
 
-    editable_levels = ["1", "2", "3", "4", "5", "7"]
+    editable_levels = ["1", "2", "3", "4", "5", "6", "7"]
     editable_rows = [row for row in skill_rows if row["level"] in editable_levels]
     for row, orb, note in zip(editable_rows, default_orbs, fallback_notes):
         if row["orb"]:
@@ -1907,6 +2431,86 @@ def build_invoker_combo_plan(
     return [early_combo, mid_combo, late_combo]
 
 
+def build_invoker_talent_plan(
+    route_title: str,
+    *,
+    low_mana_count: int,
+    low_armor_count: int,
+    slow_core_count: int,
+    regen_count: int,
+    silence_count: int,
+    jump_burst_count: int,
+    deathball_count: int,
+    pickoff_allies: int,
+    big_teamfight_allies: int,
+    frontline_allies: int,
+) -> list[dict[str, str]]:
+    """Return talent-side recommendations for Invoker."""
+    talent_rows = [
+        {
+            "level": "10",
+            "left": "-4s Tornado Cooldown",
+            "right": "+50 Ice Wall DPS",
+            "recommended": "left" if route_title == "Quas-Wex" else "right",
+            "left_reason": "Best when tempo, control loops, and repeated catch matter more than raw zoning damage.",
+            "right_reason": "Better when static targets or frontline fights let enemies sit inside Ice Wall longer.",
+        },
+        {
+            "level": "15",
+            "left": "-5s Cold Snap Cooldown",
+            "right": "+50 Forged Spirit Attack Speed",
+            "recommended": "left" if route_title == "Quas-Wex" else "right",
+            "left_reason": "Favours repeated skirmish picks, chase extensions, and punish windows on mobile heroes.",
+            "right_reason": "Favours Exort scaling and longer right-click/Forge Spirit conversions.",
+        },
+        {
+            "level": "20",
+            "left": "+30 Alacrity Damage/Speed",
+            "right": "+2 Chaos Meteors",
+            "recommended": "right" if deathball_count >= 2 or big_teamfight_allies >= 1 else "left",
+            "left_reason": "Stronger when one core can reliably hit through your control and you need cleaner single-target payoff.",
+            "right_reason": "Best when fights are grouped, setup is reliable, or teamfight layering is your win condition.",
+        },
+        {
+            "level": "25",
+            "left": "2x Quas/Wex/Exort passive effects",
+            "right": "Radial Deafening Blast",
+            "recommended": "right" if deathball_count >= 2 or frontline_allies >= 1 else "left",
+            "left_reason": "Higher all-around scaling when the game is about repeated spell cycles and orb efficiency.",
+            "right_reason": "Stronger when large chaotic fights need broader control and safer finishing space.",
+        },
+    ]
+
+    for row in talent_rows:
+        if row["level"] == "10":
+            if slow_core_count >= 2 or jump_burst_count >= 1:
+                row["recommended"] = "right"
+                row["right_reason"] = "Diving or static cores are easier to punish when Ice Wall becomes a heavier commitment tax."
+            if low_mana_count >= 2:
+                row["recommended"] = "left"
+                row["left_reason"] = "More Tornado frequency keeps EMP setups and mana punish windows online."
+        if row["level"] == "15":
+            if low_armor_count >= 2 and route_title == "Quas-Exort":
+                row["recommended"] = "right"
+                row["right_reason"] = "Low-armor heroes make Forge Spirit pressure convert much more cleanly."
+            if silence_count >= 2:
+                row["recommended"] = "left"
+                row["left_reason"] = "Shorter Cold Snap downtime is more reliable than greedier Forge scaling under heavy disruption."
+        if row["level"] == "20":
+            if pickoff_allies >= 1 and deathball_count < 2:
+                row["recommended"] = "left"
+                row["left_reason"] = "Allied catch improves the value of Alacrity as a conversion tool on isolated targets."
+            if regen_count >= 1:
+                row["recommended"] = "right"
+                row["right_reason"] = "Extra Meteor coverage helps overwhelm sustain windows once fights start dragging."
+        if row["level"] == "25":
+            if jump_burst_count >= 2 and deathball_count < 2:
+                row["recommended"] = "left"
+                row["left_reason"] = "Raw orb scaling is safer when fights are fragmented and you need more flexible second cycles."
+
+    return talent_rows
+
+
 def build_invoker_assistant_data(
     selected_enemy_names: Iterable[str],
     ally_hero_names: Iterable[str] | None = None,
@@ -2046,6 +2650,19 @@ def build_invoker_assistant_data(
         pickoff_allies=pickoff_allies,
         frontline_allies=frontline_allies,
     )
+    talent_rows = build_invoker_talent_plan(
+        route_title,
+        low_mana_count=low_mana_count,
+        low_armor_count=low_armor_count,
+        slow_core_count=slow_core_count,
+        regen_count=regen_count,
+        silence_count=silence_count,
+        jump_burst_count=jump_burst_count,
+        deathball_count=deathball_count,
+        pickoff_allies=pickoff_allies,
+        big_teamfight_allies=big_teamfight_allies,
+        frontline_allies=frontline_allies,
+    )
 
     spell_notes: list[str] = []
     if deathball_count >= 2:
@@ -2091,8 +2708,251 @@ def build_invoker_assistant_data(
         "skill_rows": skill_rows,
         "item_rows": item_rows,
         "combo_rows": combo_rows,
+        "talent_rows": talent_rows,
         "spell_notes": spell_notes[:4],
     }
+
+
+def get_invoker_orb_class(orb_name: str) -> str:
+    """Map Invoker orb names to CSS classes."""
+    normalized = orb_name.strip().lower().replace(" ", "-")
+    if normalized in {"quas", "wex", "exort", "invoke", "talent"}:
+        return f"invoker-orb-{normalized}"
+    return "invoker-orb-talent"
+
+
+def render_invoker_note_block(notes: Iterable[str]) -> str:
+    """Render a list of Invoker notes as rich HTML."""
+    note_markup = "".join(
+        dedent(
+            f"""
+            <div class="invoker-note">
+                <span class="invoker-note-dot"></span>
+                <div>{escape(str(note))}</div>
+            </div>
+            """
+        ).strip()
+        for note in notes
+    )
+    return f'<div class="invoker-note-list">{note_markup}</div>'
+
+
+def render_invoker_skill_build(skill_rows: list[dict[str, str]]) -> None:
+    """Render Invoker skill guidance as a phased timeline."""
+    phases = [
+        ("Opening", "Levels 1-6 shape lane control and your first spell identity.", {"1", "2", "3", "4", "5", "6"}),
+        ("Mid Pivot", "Levels 7-12 decide whether you stabilize, accelerate, or patch draft threats.", {"7", "8", "9", "10", "11", "12"}),
+        ("Closure", "Levels 13-18 finish the route you want for decisive mid-game and late-game fights.", {"13", "14", "15", "16", "17", "18"}),
+    ]
+    phase_cards: list[str] = []
+    for phase_title, phase_copy, level_set in phases:
+        level_markup = []
+        for row in skill_rows:
+            if row["level"] not in level_set:
+                continue
+            orb_name = str(row["orb"])
+            level_markup.append(
+                dedent(
+                    f"""
+                    <div class="invoker-level-card">
+                        <div class="invoker-level-topline">
+                            <div class="invoker-level-badge">Level {escape(str(row["level"]))}</div>
+                            <div class="invoker-orb-pill {get_invoker_orb_class(orb_name)}">{escape(orb_name)}</div>
+                        </div>
+                        <div class="invoker-level-reason">{escape(str(row["why"]))}</div>
+                    </div>
+                    """
+                ).strip()
+            )
+        phase_cards.append(
+            dedent(
+                f"""
+                <div class="invoker-skill-phase">
+                    <div class="invoker-phase-title">{escape(phase_title)}</div>
+                    <div class="invoker-phase-copy">{escape(phase_copy)}</div>
+                    <div class="invoker-level-stack">
+                        {''.join(level_markup)}
+                    </div>
+                </div>
+                """
+            ).strip()
+        )
+
+    st.markdown(
+        dedent(
+            f"""
+            <div class="invoker-skill-shell">
+                <div class="invoker-section-title">Dynamic Skill Build</div>
+                <div class="invoker-skill-grid">
+                    {''.join(phase_cards)}
+                </div>
+            </div>
+            """
+        ).strip(),
+        unsafe_allow_html=True,
+    )
+
+
+def render_invoker_item_priority_cards(item_rows: list[dict[str, object]]) -> None:
+    """Render Invoker item priorities as weighted cards."""
+    max_score = max((float(row["score"]) for row in item_rows), default=1.0)
+    card_markup = []
+    for row in item_rows:
+        width = max(16.0, min(100.0, (float(row["score"]) / max_score) * 100.0))
+        item_name = str(row["item_name"])
+        item_slug = INVOKER_ITEM_SLUGS.get(item_name, "")
+        item_icon = (
+            f'<img src="{escape(get_item_image_url(item_slug))}" alt="{escape(item_name)}" class="invoker-item-icon" />'
+            if item_slug
+            else ""
+        )
+        trigger_tags = "".join(
+            f'<span class="invoker-tag">{escape(trigger.strip())}</span>'
+            for trigger in str(row["triggers"]).split(",")
+            if trigger.strip()
+        )
+        card_markup.append(
+            dedent(
+                f"""
+                <div class="invoker-item-card">
+                    <div class="invoker-item-topline">
+                        <div class="invoker-item-title">
+                            {item_icon}
+                            <div class="invoker-item-name">{escape(item_name)}</div>
+                        </div>
+                        <div class="invoker-item-weight">{float(row["score"]):.1f}</div>
+                    </div>
+                    <div class="invoker-item-timing">{escape(str(row["timing"]))}</div>
+                    <div class="invoker-item-bar">
+                        <div class="invoker-item-bar-fill" style="width: {width:.1f}%"></div>
+                    </div>
+                    <div class="invoker-item-reason">{escape(str(row["reason"]))}</div>
+                    <div class="invoker-tag-row">{trigger_tags}</div>
+                </div>
+                """
+            ).strip()
+        )
+
+    st.markdown(
+        dedent(
+            f"""
+            <div>
+                <div class="invoker-section-title">Counter Item Priorities</div>
+                <div class="invoker-items-grid">
+                    {''.join(card_markup)}
+                </div>
+            </div>
+            """
+        ).strip(),
+        unsafe_allow_html=True,
+    )
+
+
+def render_invoker_combo_tokens(combo_text: str) -> str:
+    """Render combo text as icon-supported tokens."""
+    tokens = [token.strip() for token in combo_text.split("+") if token.strip()]
+    token_markup = []
+    for token in tokens:
+        image_slug = INVOKER_SPELL_IMAGE_SLUGS.get(token)
+        if image_slug:
+            token_markup.append(
+                f"""
+                <span class="invoker-combo-token">
+                    <img src="{escape(get_ability_image_url(image_slug))}" alt="{escape(token)}" class="invoker-combo-token-icon" />
+                    <span>{escape(token)}</span>
+                </span>
+                """
+            )
+            continue
+
+        if token in {"Urn/Spirit Vessel", "Hex/disable"}:
+            fallback_slug = "urn_of_shadows" if token == "Urn/Spirit Vessel" else "sheepstick"
+            token_markup.append(
+                f"""
+                <span class="invoker-combo-token">
+                    <img src="{escape(get_item_image_url(fallback_slug))}" alt="{escape(token)}" class="invoker-combo-token-icon" />
+                    <span>{escape(token)}</span>
+                </span>
+                """
+            )
+            continue
+
+        token_markup.append(
+            f'<span class="invoker-combo-token invoker-combo-token-textonly">{escape(token)}</span>'
+        )
+
+    return f'<div class="invoker-combo-token-row">{"".join(token_markup)}</div>'
+
+
+def render_invoker_combo_cards(combo_rows: list[dict[str, str]]) -> None:
+    """Render Invoker combo recommendations by game phase."""
+    combo_markup = []
+    for combo_row in combo_rows:
+        combo_markup.append(
+            dedent(
+                f"""
+                <div class="invoker-combo-card">
+                    <div class="invoker-combo-phase">{escape(str(combo_row["phase"]))}</div>
+                    {render_invoker_combo_tokens(str(combo_row["combo"]))}
+                    <div class="invoker-combo-spell">{escape(str(combo_row["combo"]))}</div>
+                    <div class="invoker-combo-why">{escape(str(combo_row["why"]))}</div>
+                </div>
+                """
+            ).strip()
+        )
+
+    st.markdown(
+        dedent(
+            f"""
+            <div>
+                <div class="invoker-section-title">Combo Suggestions By Phase</div>
+                <div class="invoker-combo-grid">
+                    {''.join(combo_markup)}
+                </div>
+            </div>
+            """
+        ).strip(),
+        unsafe_allow_html=True,
+    )
+
+
+def render_invoker_talent_cards(talent_rows: list[dict[str, str]]) -> None:
+    """Render Invoker talent side recommendations."""
+    row_markup = []
+    for row in sorted(talent_rows, key=lambda talent_row: int(str(talent_row["level"])), reverse=True):
+        left_class = "invoker-talent-option recommended" if row["recommended"] == "left" else "invoker-talent-option"
+        right_class = "invoker-talent-option recommended" if row["recommended"] == "right" else "invoker-talent-option"
+        row_markup.append(
+            dedent(
+                f"""
+                <div class="invoker-talent-row">
+                    <div class="{left_class}">
+                        <div class="invoker-talent-choice">{escape(str(row["left"]))}</div>
+                        <div class="invoker-talent-why">{escape(str(row["left_reason"]))}</div>
+                    </div>
+                    <div class="invoker-talent-level">{escape(str(row["level"]))}</div>
+                    <div class="{right_class}">
+                        <div class="invoker-talent-choice">{escape(str(row["right"]))}</div>
+                        <div class="invoker-talent-why">{escape(str(row["right_reason"]))}</div>
+                    </div>
+                </div>
+                """
+            ).strip()
+        )
+
+    st.markdown(
+        dedent(
+            f"""
+            <div>
+                <div class="invoker-section-title">Talent Recommendations</div>
+                <div class="invoker-talent-grid">
+                    {''.join(row_markup)}
+                </div>
+            </div>
+            """
+        ).strip(),
+        unsafe_allow_html=True,
+    )
 
 
 def render_invoker_assistant(
@@ -2101,55 +2961,103 @@ def render_invoker_assistant(
 ) -> None:
     """Render the Invoker coaching panel."""
     assistant_data = build_invoker_assistant_data(selected_enemy_names, ally_hero_names)
+    route_title = str(assistant_data["route_title"])
+    skill_rows = list(assistant_data["skill_rows"])
+    item_rows = list(assistant_data["item_rows"])
+    combo_rows = list(assistant_data["combo_rows"])
+    talent_rows = list(assistant_data["talent_rows"])
+    synergy_summary = list(assistant_data.get("synergy_summary", []))
+    orb_counts = {
+        orb_name: sum(1 for row in skill_rows if row["orb"] == orb_name)
+        for orb_name in ["Quas", "Wex", "Exort"]
+    }
+    primary_orb = max(orb_counts, key=orb_counts.get) if orb_counts else route_title.split("-")[0]
+    route_tags = [
+        f"{len(skill_rows)} level notes",
+        f"Primary orb: {primary_orb}",
+        f"{len(item_rows)} item priorities",
+        f"{len(combo_rows)} combo phases",
+    ]
+    route_tags.extend(str(note) for note in synergy_summary[:2])
 
-    st.subheader("Invoker Assistant")
-    st.caption("Draft-aware coaching for Invoker: lane direction, key punish windows, and spell priorities.")
-
-    draft_col, route_col = st.columns(2)
-    with draft_col:
-        st.markdown("**Draft Analysis**")
-        for note in assistant_data["pressure_points"]:
-            st.markdown(f"- {note}")
-    with route_col:
-        st.markdown(f"**Early Route: {assistant_data['route_title']}**")
-        st.write(str(assistant_data["route_reason"]))
-        st.caption(str(assistant_data["route_plan"]))
-        if assistant_data.get("synergy_summary"):
-            st.markdown("**Ally Synergy Impact**")
-            for note in assistant_data["synergy_summary"]:
-                st.markdown(f"- {note}")
-
-    skill_df = pd.DataFrame(assistant_data["skill_rows"]).rename(
-        columns={"level": "Level", "orb": "Orb Priority", "why": "Reason"}
+    st.markdown(
+        dedent(
+            f"""
+            <div class="invoker-shell">
+                <div class="invoker-hero">
+                    <div class="invoker-hero-panel">
+                        <div class="invoker-kicker">Invoker Match Coach</div>
+                        <h2 class="invoker-title">Invoker Assistant</h2>
+                        <div class="invoker-copy">
+                            Draft-aware coaching for Invoker: lane direction, punish windows, item pivots, and spell sequencing that you can scan mid-game without getting lost.
+                        </div>
+                        <div class="invoker-metrics">
+                            <div class="invoker-metric">
+                                <div class="invoker-metric-label">Recommended Route</div>
+                                <div class="invoker-metric-value">{escape(route_title)}</div>
+                                <div class="invoker-metric-subtle">Your opening identity for the first key timings.</div>
+                            </div>
+                            <div class="invoker-metric">
+                                <div class="invoker-metric-label">Primary Orb</div>
+                                <div class="invoker-metric-value">{escape(primary_orb)}</div>
+                                <div class="invoker-metric-subtle">Most repeated orb priority across the suggested build.</div>
+                            </div>
+                            <div class="invoker-metric">
+                                <div class="invoker-metric-label">Decision Load</div>
+                                <div class="invoker-metric-value">{len(item_rows) + len(combo_rows)}</div>
+                                <div class="invoker-metric-subtle">High-signal pivots covering itemization and fight flow.</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="invoker-route-panel">
+                        <div class="invoker-route-badge">Opening Route</div>
+                        <div class="invoker-route-title">{escape(route_title)}</div>
+                        <div class="invoker-route-reason">{escape(str(assistant_data["route_reason"]))}</div>
+                        <div class="invoker-route-plan">{escape(str(assistant_data["route_plan"]))}</div>
+                        <div class="invoker-tag-row">
+                            {''.join(f'<span class="invoker-tag">{escape(tag)}</span>' for tag in route_tags)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+        ).strip(),
+        unsafe_allow_html=True,
     )
-    st.markdown("**Dynamic Skill Build**")
-    st.dataframe(skill_df, use_container_width=True, hide_index=True)
 
-    item_col, spell_col = st.columns(2)
-    with item_col:
-        st.markdown("**Counter Item Priorities**")
-        item_df = pd.DataFrame(assistant_data["item_rows"]).rename(
-            columns={
-                "item_name": "Item",
-                "score": "Weight",
-                "timing": "Timing",
-                "reason": "Reason",
-                "triggers": "Triggers",
-            }
+    analysis_col, spell_col = st.columns(2)
+    with analysis_col:
+        st.markdown(
+            dedent(
+                f"""
+                <div class="invoker-analysis-card">
+                    <div class="invoker-section-title">Draft Analysis</div>
+                    {render_invoker_note_block(assistant_data["pressure_points"])}
+                </div>
+                """
+            ).strip(),
+            unsafe_allow_html=True,
         )
-        st.dataframe(item_df, use_container_width=True, hide_index=True)
     with spell_col:
-        st.markdown("**Combo Priority**")
-        for note in assistant_data["spell_notes"]:
-            st.markdown(f"- {note}")
+        spell_title = "Spell Priority" if not synergy_summary else "Spell + Ally Synergy"
+        spell_notes = list(assistant_data["spell_notes"])
+        merged_spell_notes = spell_notes[:3] + synergy_summary[:2]
+        st.markdown(
+            dedent(
+                f"""
+                <div class="invoker-spell-card">
+                    <div class="invoker-section-title">{escape(spell_title)}</div>
+                    {render_invoker_note_block(merged_spell_notes)}
+                </div>
+                """
+            ).strip(),
+            unsafe_allow_html=True,
+        )
 
-    st.markdown("**Combo Suggestions By Phase**")
-    combo_cols = st.columns(len(assistant_data["combo_rows"]))
-    for column, combo_row in zip(combo_cols, assistant_data["combo_rows"]):
-        with column:
-            st.markdown(f"**{combo_row['phase']}**")
-            st.code(str(combo_row["combo"]), language="text")
-            st.caption(str(combo_row["why"]))
+    render_invoker_skill_build(skill_rows)
+    render_invoker_talent_cards(talent_rows)
+    render_invoker_item_priority_cards(item_rows)
+    render_invoker_combo_cards(combo_rows)
 
 
 def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int, bool, list[str], bool]:
