@@ -2458,22 +2458,22 @@ def build_invoker_talent_plan(
         {
             "level": "15",
             "left": "-5s Cold Snap Cooldown",
-            "right": "+50 Forged Spirit Attack Speed",
+            "right": "+50 Alacrity Damage/Speed",
             "recommended": "left" if route_title == "Quas-Wex" else "right",
             "left_reason": "Favours repeated skirmish picks, chase extensions, and punish windows on mobile heroes.",
-            "right_reason": "Favours Exort scaling and longer right-click/Forge Spirit conversions.",
+            "right_reason": "Favours Exort scaling and stronger right-click conversions on cores that can stay hitting.",
         },
         {
             "level": "20",
-            "left": "+30 Alacrity Damage/Speed",
+            "left": "+1 Orb Levels",
             "right": "+2 Chaos Meteors",
             "recommended": "right" if deathball_count >= 2 or big_teamfight_allies >= 1 else "left",
-            "left_reason": "Stronger when one core can reliably hit through your control and you need cleaner single-target payoff.",
+            "left_reason": "Stronger when flexible spell scaling and broader orb efficiency matter more than all-in teamfight burst.",
             "right_reason": "Best when fights are grouped, setup is reliable, or teamfight layering is your win condition.",
         },
         {
             "level": "25",
-            "left": "2x Quas/Wex/Exort passive effects",
+            "left": "2x Quas/Wex/Exort Active Effects",
             "right": "Radial Deafening Blast",
             "recommended": "right" if deathball_count >= 2 or frontline_allies >= 1 else "left",
             "left_reason": "Higher all-around scaling when the game is about repeated spell cycles and orb efficiency.",
@@ -2492,14 +2492,14 @@ def build_invoker_talent_plan(
         if row["level"] == "15":
             if low_armor_count >= 2 and route_title == "Quas-Exort":
                 row["recommended"] = "right"
-                row["right_reason"] = "Low-armor heroes make Forge Spirit pressure convert much more cleanly."
+                row["right_reason"] = "Low-armor heroes make Alacrity-backed right-click windows convert much more cleanly."
             if silence_count >= 2:
                 row["recommended"] = "left"
-                row["left_reason"] = "Shorter Cold Snap downtime is more reliable than greedier Forge scaling under heavy disruption."
+                row["left_reason"] = "Shorter Cold Snap downtime is more reliable than greedier Alacrity scaling under heavy disruption."
         if row["level"] == "20":
             if pickoff_allies >= 1 and deathball_count < 2:
                 row["recommended"] = "left"
-                row["left_reason"] = "Allied catch improves the value of Alacrity as a conversion tool on isolated targets."
+                row["left_reason"] = "Allied catch improves the value of raw orb scaling because you get cleaner follow-up windows on isolated targets."
             if regen_count >= 1:
                 row["recommended"] = "right"
                 row["right_reason"] = "Extra Meteor coverage helps overwhelm sustain windows once fights start dragging."
