@@ -56,6 +56,7 @@ streamlit run app.py
 - `data/dotabuff_worst_versus.json`: Elle veya yari otomatik doldurulan Dotabuff dataset'i
 - `data/dotabuff_import_template.json`: Dotabuff veri iceri aktarma ornek dosyasi
 - `scripts/import_dotabuff_data.py`: Import dosyasini ana dataset'e merge eden script
+- `scripts/refresh_dotabuff_dataset.py`: OpenDota hero listesi ve Dotabuff hero sayfalarindan `Worst Versus` dataset'ini tam yenileyen script
 - `requirements.txt`: Python bagimliliklari
 - `.gitignore`: Git disinda tutulacak dosyalar
 
@@ -72,6 +73,12 @@ Yerel Dotabuff dataset'ini toplu guncellemek icin:
 
 ```bash
 python3 scripts/import_dotabuff_data.py data/dotabuff_import_template.json
+```
+
+Canli Dotabuff verisini tum hero havuzu icin yeniden cekmek icin:
+
+```bash
+python3 scripts/refresh_dotabuff_dataset.py
 ```
 
 Import dosyasi `heroes` objesi altinda su formatta veri bekler:

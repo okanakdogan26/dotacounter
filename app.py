@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from html import escape
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,6 +23,9 @@ DEFAULT_MIN_GAMES_THRESHOLD = 50
 DATA_DIR = Path(__file__).parent / "data"
 DOTABUFF_DATASET_PATH = DATA_DIR / "dotabuff_worst_versus.json"
 SYNERGY_CONFIG_PATH = DATA_DIR / "synergy_map.json"
+CURRENT_PATCH_VERSION = "7.41a"
+CURRENT_PATCH_RELEASE_DATE = "2026-03-28"
+CURRENT_PATCH_URL = "https://www.dota2.com/patches/7.41a"
 REQUEST_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -2052,6 +2056,159 @@ def get_ally_synergy_scores(hero_df: pd.DataFrame, ally_hero_names: Iterable[str
     return combined_scores
 
 
+def build_dotabuff_matchup_lookup(dataset: dict) -> dict[tuple[str, str], float]:
+    """Map (counter_hero, enemy_hero) pairs to a lightweight matchup edge score."""
+    hero_map = dataset.get("heroes", {})
+    matchup_lookup: dict[tuple[str, str], float] = {}
+
+    for enemy_hero, rows in hero_map.items():
+        if not isinstance(rows, list):
+            continue
+        for entry in rows:
+            if not isinstance(entry, dict):
+                continue
+
+            counter_hero = str(entry.get("hero", "")).strip()
+            if not counter_hero:
+                continue
+
+            disadvantage_pct = float(pd.to_numeric(entry.get("disadvantage_pct"), errors="coerce") or 0.0)
+            win_rate_pct = float(pd.to_numeric(entry.get("win_rate_pct"), errors="coerce") or 50.0)
+            matchup_score = max(disadvantage_pct, 0.0) + max(win_rate_pct - 50.0, 0.0) * 0.35
+            if matchup_score <= 0:
+                continue
+
+            matchup_lookup[(counter_hero, enemy_hero)] = max(
+                matchup_lookup.get((counter_hero, enemy_hero), 0.0),
+                matchup_score,
+            )
+
+    return matchup_lookup
+
+
+def compute_team_internal_synergy_score(hero_df: pd.DataFrame, team_hero_names: Iterable[str]) -> float:
+    """Estimate how cohesive a team draft looks based on the local synergy model."""
+    team_names = [hero_name for hero_name in dict.fromkeys(team_hero_names) if hero_name]
+    if len(team_names) < 2:
+        return 0.0
+
+    synergy_lookup = get_ally_synergy_scores(hero_df, team_names)
+    directed_pair_count = len(team_names) * max(len(team_names) - 1, 1)
+    if directed_pair_count <= 0:
+        return 0.0
+
+    team_score = sum(float(synergy_lookup.get(hero_name, 0.0)) for hero_name in team_names)
+    return team_score / directed_pair_count
+
+
+def compute_team_matchup_score(
+    team_hero_names: Iterable[str],
+    enemy_hero_names: Iterable[str],
+    matchup_lookup: dict[tuple[str, str], float],
+) -> tuple[float, float]:
+    """Estimate a team's draft edge against the opposing lineup and its data coverage."""
+    team_names = [hero_name for hero_name in dict.fromkeys(team_hero_names) if hero_name]
+    enemy_names = [hero_name for hero_name in dict.fromkeys(enemy_hero_names) if hero_name]
+    possible_pair_count = len(team_names) * len(enemy_names)
+    if possible_pair_count <= 0:
+        return 0.0, 0.0
+
+    total_score = 0.0
+    matched_pair_count = 0
+    for team_hero in team_names:
+        for enemy_hero in enemy_names:
+            matchup_score = matchup_lookup.get((team_hero, enemy_hero))
+            if matchup_score is None:
+                continue
+            total_score += matchup_score
+            matched_pair_count += 1
+
+    if matched_pair_count <= 0:
+        return 0.0, 0.0
+
+    average_matchup_score = total_score / matched_pair_count
+    coverage_ratio = matched_pair_count / possible_pair_count
+    return average_matchup_score * (0.5 + coverage_ratio * 0.5), coverage_ratio
+
+
+def compute_draft_win_chances(
+    hero_df: pd.DataFrame,
+    ally_hero_names: Iterable[str],
+    enemy_hero_names: Iterable[str],
+    dotabuff_dataset: dict,
+) -> dict[str, float]:
+    """Estimate both teams' draft win chance from synergy plus matchup signals."""
+    ally_team = [hero_name for hero_name in dict.fromkeys(ally_hero_names) if hero_name]
+    enemy_team = [hero_name for hero_name in dict.fromkeys(enemy_hero_names) if hero_name]
+    if not ally_team or not enemy_team:
+        return {}
+
+    matchup_lookup = build_dotabuff_matchup_lookup(dotabuff_dataset)
+    ally_synergy_score = compute_team_internal_synergy_score(hero_df, ally_team)
+    enemy_synergy_score = compute_team_internal_synergy_score(hero_df, enemy_team)
+    ally_matchup_score, ally_matchup_coverage = compute_team_matchup_score(
+        ally_team,
+        enemy_team,
+        matchup_lookup,
+    )
+    enemy_matchup_score, enemy_matchup_coverage = compute_team_matchup_score(
+        enemy_team,
+        ally_team,
+        matchup_lookup,
+    )
+
+    ally_strength = ally_matchup_score * 1.2 + ally_synergy_score * 0.45
+    enemy_strength = enemy_matchup_score * 1.2 + enemy_synergy_score * 0.45
+    strength_delta = ally_strength - enemy_strength
+    ally_win_chance = 100.0 / (1.0 + math.exp(-strength_delta / 2.8))
+    ally_win_chance = min(max(ally_win_chance, 5.0), 95.0)
+    enemy_win_chance = 100.0 - ally_win_chance
+
+    return {
+        "ally_win_chance": round(ally_win_chance, 1),
+        "enemy_win_chance": round(enemy_win_chance, 1),
+        "ally_synergy_score": round(ally_synergy_score, 2),
+        "enemy_synergy_score": round(enemy_synergy_score, 2),
+        "ally_matchup_score": round(ally_matchup_score, 2),
+        "enemy_matchup_score": round(enemy_matchup_score, 2),
+        "ally_matchup_coverage": round(ally_matchup_coverage * 100.0, 1),
+        "enemy_matchup_coverage": round(enemy_matchup_coverage * 100.0, 1),
+    }
+
+
+def render_draft_win_chance(
+    hero_df: pd.DataFrame,
+    ally_hero_names: Iterable[str],
+    enemy_hero_names: Iterable[str],
+    dotabuff_dataset: dict,
+) -> None:
+    """Render both teams' estimated draft win chance when synergy mode is active."""
+    draft_chances = compute_draft_win_chances(hero_df, ally_hero_names, enemy_hero_names, dotabuff_dataset)
+    if not draft_chances:
+        return
+
+    st.subheader("Draft Win Chance")
+    ally_col, enemy_col = st.columns(2)
+    with ally_col:
+        st.metric("Your Team", f"{draft_chances['ally_win_chance']:.1f}%")
+        st.caption(", ".join(ally_hero_names))
+        st.caption(
+            f"Synergy {draft_chances['ally_synergy_score']:.2f} | "
+            f"Matchup {draft_chances['ally_matchup_score']:.2f} | "
+            f"Coverage {draft_chances['ally_matchup_coverage']:.1f}%"
+        )
+    with enemy_col:
+        st.metric("Enemy Team", f"{draft_chances['enemy_win_chance']:.1f}%")
+        st.caption(", ".join(enemy_hero_names))
+        st.caption(
+            f"Synergy {draft_chances['enemy_synergy_score']:.2f} | "
+            f"Matchup {draft_chances['enemy_matchup_score']:.2f} | "
+            f"Coverage {draft_chances['enemy_matchup_coverage']:.1f}%"
+        )
+
+    st.caption("Draft win chance is heuristic: team synergy plus local Dotabuff matchup signals, not a live match prediction.")
+
+
 def add_weighted_invoker_item(
     suggestion_map: dict[str, dict[str, object]],
     *,
@@ -3507,6 +3664,14 @@ def main() -> None:
         f"Find the best hero counters against the selected enemies using OpenDota data from the last 30 days. "
         f"Current minimum sample threshold: {min_games_threshold} matches."
     )
+    st.caption(
+        f"Patch context: {CURRENT_PATCH_VERSION} ({CURRENT_PATCH_RELEASE_DATE}). "
+        f"Latest patch notes: {CURRENT_PATCH_URL}"
+    )
+    st.caption(
+        "OpenDota Explorer still uses a rolling 30-day sample, so results can include pre-patch matches; "
+        "the local Dotabuff snapshot has been refreshed for 7.41a context."
+    )
 
     st.write("Choose an enemy lineup and review the best counter recommendations.")
     render_summary_strip(
@@ -3551,6 +3716,20 @@ def main() -> None:
         if not dotabuff_signal_df.empty
         else "local dataset loaded, but no entries exist for the selected heroes"
     )
+    if dotabuff_dataset.get("patch_version"):
+        st.caption(
+            f"Local Dotabuff dataset: {dotabuff_dataset.get('patch_version')} "
+            f"(patch date: {dotabuff_dataset.get('patch_release_date', 'unknown')}, "
+            f"updated: {dotabuff_dataset.get('updated_at', 'unknown')})"
+        )
+
+    if show_synergy and effective_ally_hero_names and selected_hero_names:
+        render_draft_win_chance(
+            hero_df,
+            effective_ally_hero_names,
+            selected_hero_names,
+            dotabuff_dataset,
+        )
 
     data_source_label = "OpenDota Explorer"
     if rows:
