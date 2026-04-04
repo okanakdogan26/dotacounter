@@ -18,6 +18,7 @@ STEAM_HERO_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/
 STEAM_ITEM_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/items"
 STEAM_ABILITY_IMAGE_BASE_URL = f"{STEAM_CDN_BASE_URL}/apps/dota2/images/dota_react/abilities"
 ROLE_OPTIONS = ["All", "Carry", "Support", "Mid", "Offlane", "Disabler", "Durable"]
+APP_MODE_OPTIONS = ["Counter Picker", "Support Mode"]
 REQUEST_TIMEOUT = 30
 DEFAULT_MIN_GAMES_THRESHOLD = 50
 DATA_DIR = Path(__file__).parent / "data"
@@ -524,6 +525,13 @@ def matches_role_filter(roles: list[str] | object, selected_role: str) -> bool:
             and bool(role_set.intersection({"Durable", "Initiator", "Disabler"}))
         )
     return False
+
+
+def is_support_hero(roles: list[str] | object) -> bool:
+    """Return whether a hero is a plausible position 5 support candidate."""
+    normalized_roles = roles if isinstance(roles, list) else []
+    role_set = set(normalized_roles)
+    return "Support" in role_set or "Disabler" in role_set
 
 
 def get_hero_image_url(image_path: str | None, hero_name: str | None = None) -> str:
@@ -3217,11 +3225,23 @@ def render_invoker_assistant(
     render_invoker_combo_cards(combo_rows)
 
 
-def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int, bool, list[str], bool]:
+def render_sidebar(
+    hero_df: pd.DataFrame,
+) -> tuple[str, list[str], str, int, bool, list[str], bool, str]:
     """Render sidebar controls and return current selections."""
     hero_names = hero_df["localized_name"].sort_values().tolist()
+    support_hero_names = (
+        hero_df[hero_df["roles"].apply(is_support_hero)]["localized_name"].sort_values().tolist()
+    )
 
     st.sidebar.header("Filters")
+    app_mode = st.sidebar.radio(
+        "App mode",
+        options=APP_MODE_OPTIONS,
+        index=0,
+        help="Switch between general counter picking and position 5 support guidance.",
+        key="app_mode",
+    )
     selected_heroes = st.sidebar.multiselect(
         "Enemy heroes",
         options=hero_names,
@@ -3229,6 +3249,15 @@ def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int, bool, li
         help="Select up to 5 enemy heroes.",
         key="selected_enemy_heroes",
     )
+    selected_support_hero = ""
+    if app_mode == "Support Mode":
+        selected_support_hero = st.sidebar.selectbox(
+            "Your support hero",
+            options=[""] + support_hero_names,
+            format_func=lambda hero_name: hero_name or "Select a position 5 hero",
+            help="Choose the support hero you want to play, then review enemy-specific matchup advice.",
+            key="selected_support_hero",
+        )
     selected_role = st.sidebar.selectbox("Role filter", ROLE_OPTIONS)
     show_synergy = st.sidebar.checkbox(
         "Show Synergy",
@@ -3260,12 +3289,14 @@ def render_sidebar(hero_df: pd.DataFrame) -> tuple[list[str], str, int, bool, li
         key="show_invoker_assistant",
     )
     return (
+        app_mode,
         selected_heroes,
         selected_role,
         min_games_threshold,
         show_synergy,
         ally_hero_names,
         show_invoker_assistant,
+        selected_support_hero,
     )
 
 
@@ -3494,6 +3525,205 @@ def build_dotabuff_signal_dataframe(selected_enemy_names: Iterable[str]) -> pd.D
     return signal_df
 
 
+def build_support_matchup_dataframe(
+    support_hero_name: str,
+    selected_enemy_names: Iterable[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Build weak-against and strong-against matchups for a chosen support hero.
+
+    The local Dotabuff dataset stores "Worst Versus" rows keyed by hero name, so:
+    - direct rows for the selected support hero are enemies the support should avoid
+    - reverse rows where the support appears in someone else's list are enemies it punishes well
+    """
+    dataset = load_dotabuff_dataset()
+    hero_map = dataset.get("heroes", {})
+    selected_enemy_set = set(selected_enemy_names or [])
+    matchup_columns = ["enemy_hero", "disadvantage_pct", "matches", "win_rate_pct", "selected_enemy"]
+
+    weak_rows = [
+        {
+            "enemy_hero": entry["hero"],
+            "disadvantage_pct": pd.to_numeric(entry["disadvantage_pct"], errors="coerce"),
+            "matches": pd.to_numeric(entry["matches"], errors="coerce"),
+            "win_rate_pct": pd.to_numeric(entry.get("win_rate_pct"), errors="coerce"),
+            "selected_enemy": entry["hero"] in selected_enemy_set,
+        }
+        for entry in hero_map.get(support_hero_name, [])
+    ]
+
+    strong_rows: list[dict] = []
+    for enemy_hero_name, entries in hero_map.items():
+        for entry in entries:
+            if entry.get("hero") != support_hero_name:
+                continue
+            strong_rows.append(
+                {
+                    "enemy_hero": enemy_hero_name,
+                    "disadvantage_pct": pd.to_numeric(entry["disadvantage_pct"], errors="coerce"),
+                    "matches": pd.to_numeric(entry["matches"], errors="coerce"),
+                    "win_rate_pct": pd.to_numeric(entry.get("win_rate_pct"), errors="coerce"),
+                    "selected_enemy": enemy_hero_name in selected_enemy_set,
+                }
+            )
+
+    weak_df = pd.DataFrame(weak_rows, columns=matchup_columns)
+    strong_df = pd.DataFrame(strong_rows, columns=matchup_columns)
+
+    if not weak_df.empty:
+        weak_df = weak_df.dropna(subset=["enemy_hero"]).sort_values(
+            ["selected_enemy", "disadvantage_pct", "matches"],
+            ascending=[False, False, False],
+        )
+    if not strong_df.empty:
+        strong_df = strong_df.dropna(subset=["enemy_hero"]).sort_values(
+            ["selected_enemy", "disadvantage_pct", "matches"],
+            ascending=[False, False, False],
+        )
+
+    return weak_df.reset_index(drop=True), strong_df.reset_index(drop=True)
+
+
+def render_support_matchup_table(
+    title: str,
+    matchup_df: pd.DataFrame,
+    *,
+    empty_message: str,
+    accent_type: str,
+) -> None:
+    """Render a compact matchup table for support mode."""
+    st.subheader(title)
+    if matchup_df.empty:
+        st.info(empty_message)
+        return
+
+    display_df = matchup_df.copy()
+    display_df["Status"] = display_df["selected_enemy"].apply(
+        lambda is_selected: "In enemy lineup" if bool(is_selected) else "General matchup"
+    )
+    display_df = display_df.rename(
+        columns={
+            "enemy_hero": "Hero",
+            "disadvantage_pct": "Signal (%)",
+            "matches": "Matches",
+            "win_rate_pct": "Win Rate (%)",
+        }
+    )
+    display_df["Signal (%)"] = pd.to_numeric(display_df["Signal (%)"], errors="coerce").round(2)
+    display_df["Win Rate (%)"] = pd.to_numeric(display_df["Win Rate (%)"], errors="coerce").round(2)
+    st.dataframe(
+        display_df.loc[:, ["Hero", "Signal (%)", "Win Rate (%)", "Matches", "Status"]].head(6),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Signal (%)": st.column_config.NumberColumn(
+                "Signal (%)",
+                help=(
+                    "Higher means the matchup signal is stronger. "
+                    + (
+                        "For avoid lists, it indicates a bigger disadvantage."
+                        if accent_type == "danger"
+                        else "For strong lists, it indicates the enemy struggles more in this matchup."
+                    )
+                ),
+                format="%.2f",
+            ),
+            "Win Rate (%)": st.column_config.NumberColumn("Win Rate (%)", format="%.2f"),
+        },
+    )
+
+
+def render_support_mode(
+    hero_df: pd.DataFrame,
+    *,
+    support_hero_name: str,
+    selected_enemy_names: Iterable[str],
+) -> None:
+    """Render position 5 support guidance for a chosen hero."""
+    if not support_hero_name:
+        st.info("Select your support hero from the sidebar to open Support Mode.")
+        return
+
+    selected_enemy_list = list(selected_enemy_names)
+    weak_df, strong_df = build_support_matchup_dataframe(support_hero_name, selected_enemy_list)
+    selected_enemy_set = set(selected_enemy_list)
+
+    targeted_weak_df = weak_df[weak_df["enemy_hero"].isin(selected_enemy_set)].copy()
+    targeted_strong_df = strong_df[strong_df["enemy_hero"].isin(selected_enemy_set)].copy()
+
+    st.subheader(f"Support Mode: {support_hero_name}")
+    st.caption(
+        "This view is tuned for position 5 decision-making: which enemy heroes punish your pick, "
+        "which lanes or skirmishes you can pressure, and which utility items rise in value."
+    )
+
+    if selected_enemy_list:
+        st.caption(f"Enemy lineup context: {', '.join(selected_enemy_list)}")
+    else:
+        st.caption("No enemy heroes selected yet. Global support matchup signals are shown below.")
+
+    item_suggestions_df = build_item_suggestions(
+        selected_enemy_list,
+        ally_hero_names=[],
+        selected_role="Support",
+        counter_hero_name=support_hero_name,
+        hero_df=hero_df,
+    )
+
+    summary_col_1, summary_col_2, summary_col_3 = st.columns(3)
+    with summary_col_1:
+        st.metric("Avoid In Lineup", len(targeted_weak_df))
+    with summary_col_2:
+        st.metric("Strong Vs In Lineup", len(targeted_strong_df))
+    with summary_col_3:
+        st.metric("Item Pivots", len(item_suggestions_df))
+
+    danger_title = "Kimlerden Uzak Durmalisin"
+    if selected_enemy_list:
+        render_support_matchup_table(
+            danger_title,
+            targeted_weak_df,
+            empty_message=(
+                "Secili rakipler icinde bu support icin belirgin bir zor matchup sinyali bulunmuyor."
+            ),
+            accent_type="danger",
+        )
+    else:
+        render_support_matchup_table(
+            danger_title,
+            weak_df,
+            empty_message="No avoid-matchup rows were found for this support in the local dataset.",
+            accent_type="danger",
+        )
+
+    strong_title = "Kimlere Karsi Guclusun"
+    if selected_enemy_list:
+        render_support_matchup_table(
+            strong_title,
+            targeted_strong_df,
+            empty_message=(
+                "Secili rakipler icinde bu support icin belirgin bir avantajli matchup sinyali bulunmuyor."
+            ),
+            accent_type="positive",
+        )
+    else:
+        render_support_matchup_table(
+            strong_title,
+            strong_df,
+            empty_message="No favorable reverse-matchup rows were found for this support in the local dataset.",
+            accent_type="positive",
+        )
+
+    st.subheader("Item Recommendations")
+    if item_suggestions_df.empty:
+        st.info("Select enemy heroes to generate matchup-based support item suggestions.")
+    else:
+        st.caption(
+            "Utility priorities are derived from the selected enemy lineup and weighted for support heroes."
+        )
+        render_item_suggestions(item_suggestions_df)
+
+
 def prepare_results_dataframe(
     rows: list[dict],
     hero_df: pd.DataFrame,
@@ -3649,16 +3879,31 @@ def main() -> None:
         return
 
     (
+        app_mode,
         selected_hero_names,
         selected_role,
         min_games_threshold,
         show_synergy,
         ally_hero_names,
         show_invoker_assistant,
+        selected_support_hero,
     ) = render_sidebar(hero_df)
     effective_ally_hero_names = [hero_name for hero_name in ally_hero_names if hero_name not in selected_hero_names]
     hero_name_to_id = hero_df.set_index("localized_name")["id"].to_dict()
-    selected_enemy_ids = tuple(hero_name_to_id[name] for name in selected_hero_names)
+    selected_enemy_ids = tuple(hero_name_to_id[name] for name in selected_hero_names if name in hero_name_to_id)
+
+    if app_mode == "Support Mode":
+        st.caption(
+            f"Patch context: {CURRENT_PATCH_VERSION} ({CURRENT_PATCH_RELEASE_DATE}). "
+            f"Latest patch notes: {CURRENT_PATCH_URL}"
+        )
+        st.write("Choose your position 5 hero and inspect enemy-specific matchup guidance.")
+        render_support_mode(
+            hero_df,
+            support_hero_name=selected_support_hero,
+            selected_enemy_names=selected_hero_names,
+        )
+        return
 
     st.caption(
         f"Find the best hero counters against the selected enemies using OpenDota data from the last 30 days. "
